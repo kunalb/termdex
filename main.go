@@ -1,14 +1,25 @@
 package main
 
 import (
+	"github.com/gdamore/tcell/v2"
+
 	"fmt"
 	"log"
-	"github.com/gdamore/tcell/v2"
+	"os"
 )
 
+import flag "github.com/spf13/pflag"
 
-func redirectLogs() {
-	log.SetOutput()
+func redirectLogs() func() {
+	logFile, err := os.OpenFile("termdex.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.SetOutput(logFile)
+
+	return func() {
+		logFile.Close()
+	}
 }
 
 func drawText(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style, text string) {
@@ -63,7 +74,24 @@ func drawBox(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style, text string)
 	drawText(s, x1+1, y1+1, x2-1, y2-1, style, text)
 }
 
-func main() {
+func help() {
+	println("TermDex -- terminal index cards\n")
+	println("Subcommands: ")
+	println("  board: visualize existing cards")
+	println("  new: create a new card")
+	println("  init: register a directory as a termdex")
+	println()
+}
+
+func Init() {
+
+}
+
+func NewCard() {
+	println("Making a new card!")
+}
+
+func Board() {
 	defStyle := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	boxStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorPurple)
 
@@ -141,4 +169,29 @@ func main() {
 			}
 		}
 	}
+}
+
+func main() {
+	// Redirect logs because stdout/stderr are used for rendering
+	closeLogFile := redirectLogs()
+	defer closeLogFile()
+
+	newCmd := flag.NewFlagSet("new", flag.ExitOnError)
+
+	subCommand := "board"
+	if len(os.Args) > 1 {
+		subCommand = os.Args[1]
+	}
+
+	switch subCommand {
+	case "new":
+		newCmd.Parse(os.Args[2:])
+		NewCard()
+	case "board":
+		Board()
+	default:
+		help()
+		os.Exit(1)
+	}
+
 }
