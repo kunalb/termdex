@@ -1,7 +1,7 @@
 # Change these variables as necessary.
 # From https://www.alexedwards.net/blog/a-time-saving-makefile-for-your-go-projects
 
-MAIN_PACKAGE_PATH := ./main.go
+MAIN_PACKAGE_PATH := ./main.go ./crawl.go
 BINARY_NAME := termdex
 
 # ==================================================================================== #

@@ -85,6 +85,7 @@ func help() {
 	println("  browse: browse all notes")
 	println("  init: register a directory as a termdex")
 	println("  new: create a new card")
+	println("  journal: create daily entry")
 	println("  lsp: run as an lsp for $EDITOR, useful for linking")
 	println()
 }
@@ -138,6 +139,8 @@ func NewCard() {
 }
 
 func Board() {
+	CrawlDir(".")
+
 	defStyle := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	boxStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorPurple)
 
@@ -217,6 +220,50 @@ func Board() {
 	}
 }
 
+
+func Journal() {
+	editorBinary := os.Getenv("EDITOR")
+	if editorBinary == "" {
+		log.Println(
+			"Couldn't find a configured editor: set the EDITOR environment" +
+				"variable to a suitable editor. Falling back to nano.")
+		editorBinary = "nano"
+	}
+
+	currentTime := time.Now()
+	indexCardDir := currentTime.Format("2006/01/02")
+
+	fileName := "journal.md"
+
+	dirErr := os.MkdirAll(indexCardDir, os.ModePerm)
+	if dirErr != nil {
+		log.Fatal(dirErr)
+	}
+
+	cardPath := filepath.Join(indexCardDir, fileName)
+
+	cmdPath, cmdPathErr := exec.LookPath(editorBinary)
+	if cmdPathErr != nil {
+		log.Panic(cmdPathErr)
+	}
+
+	cmd := exec.Command(cmdPath, cardPath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = os.Environ()
+	editErr := cmd.Run()
+	if editErr != nil {
+		log.Fatal(editErr)
+	}
+
+	cmdErr := cmd.Wait()
+	if cmdErr != nil {
+		log.Fatal("Failed to run nvim: ", cmdErr)
+	}
+}
+
+
 func main() {
 	// Redirect logs because stdout/stderr are used for rendering
 	closeLogFile := redirectLogs()
@@ -235,9 +282,10 @@ func main() {
 		NewCard()
 	case "board":
 		Board()
+	case "journal":
+		Journal()
 	default:
 		help()
 		os.Exit(1)
 	}
-
 }
