@@ -15,6 +15,7 @@ SQLITE_EXTENSION_INIT1
 #include <string.h>
 #include <assert.h>
 
+const char* DEFAULT_DIR = ".";
 
 /* Functions defined in Go */
 sqlite3_int64 CreateTable(const char* dir);
@@ -53,12 +54,14 @@ static int mdvtabCreate(
   mdvtab_vtab *pNew;
   int rc;
 
-  if (argc != 4) {
-    *pzErr = sqlite3_mprintf("Requires one argument, the root directory (received %d)", argc - 3);
+  if (argc > 4) {
+    *pzErr = sqlite3_mprintf("Requires at most one argument, the root directory (received %d)", argc - 3);
     return SQLITE_ERROR;
   }
 
-  sqlite3_int64 iTableid = CreateTable(argv[3]);
+  const char* dir = argc == 4 ? argv[3] : DEFAULT_DIR;
+
+  sqlite3_int64 iTableid = CreateTable(dir);
   char* decl = TableDeclaration(iTableid);
   rc = sqlite3_declare_vtab(db, decl);
   free(decl);
