@@ -1,21 +1,26 @@
+// Implements a Virtual Table extension for SQLite that allows querying
+// markdown documents through SQL, with special handling for frontmatter.
+//
+// TODO:
+//   - Make the table structure static and use JSONB to store metadata; makes
+//     the table be significantly more "live" to react to changing/new files.
 package main
 
-/*
-#cgo CFLAGS: -g -Wall
-#cgo LDFLAGS: -lsqlite3
-#include "sqlite3ext.h"
-
-int c_sqlite3_mdvtab_init(
-  sqlite3 *db,
-  char **pzErrMsg,
-  const sqlite3_api_routines *pApi
-);
-*/
+// #cgo CFLAGS: -g -Wall
+// #cgo LDFLAGS: -lsqlite3
+// #include "sqlite3ext.h"
+//
+// int sqlite3_mdvtab_init_impl(
+//   sqlite3 *db,
+//   char **pzErrMsg,
+//   const sqlite3_api_routines *pApi
+// );
 import "C"
 import (
 	"bufio"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -24,8 +29,10 @@ import (
 )
 
 type MdFile struct {
-	Path        string
-	Size        int64
+	Path    string
+	Size    int64
+	ModTime int64
+	// FirstCreated int64
 	FrontMatter map[string]interface{}
 }
 
@@ -35,31 +42,39 @@ type Table struct {
 	Cols  []string
 }
 
+var tableCounter int64 = 0
+var tables = make(map[int64]Table)
+
+// Walk over the directory and fill in the table details
+// This is done up front to make sure the table schema can be created correctly
 func (cur *Table) Init() {
 	filepath.WalkDir(cur.Dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			panic(err)
+			log.Printf("Skipping indexing %s because of %s", path, err)
+			return nil
 		}
 
 		if !d.IsDir() && filepath.Ext(path) == ".md" {
 			info, infoErr := d.Info()
 			if infoErr != nil {
-				panic(infoErr)
+				log.Printf("Couldn't get file info of %s because of %s; skipping file", path, infoErr)
+				return nil
 			}
 
 			var matter map[string]interface{}
 
 			fileReader, openErr := os.Open(path)
 			if openErr != nil {
-				panic(openErr)
+				log.Printf("Couldn't open %s because of %s; skipping file.", path, openErr)
+				return nil
 			}
 
 			_, matterErr := frontmatter.Parse(bufio.NewReader(fileReader), &matter)
 			if matterErr != nil {
-				panic(matterErr)
+				log.Printf("Couldn't parse the front matter of %s because of %s; skipping parsing.", path, matterErr)
 			}
 
-			cur.Files = append(cur.Files, MdFile{path, info.Size(), matter})
+			cur.Files = append(cur.Files, MdFile{path, info.Size(), info.ModTime().Unix(), matter})
 		}
 		return nil
 	})
@@ -82,26 +97,23 @@ func MakeTable(dir string) Table {
 	return table
 }
 
-var cacheId int64 = 0
-var cursorCache = make(map[int64]Table)
-
 //export sqlite3_mdvtab_init
 func sqlite3_mdvtab_init(db *C.sqlite3, pzErrMsg **C.char, pApi *C.sqlite3_api_routines) C.int {
-	return C.c_sqlite3_mdvtab_init(db, pzErrMsg, pApi)
+	return C.sqlite3_mdvtab_init_impl(db, pzErrMsg, pApi)
 }
 
 //export CreateTable
 func CreateTable(dir *C.char) int64 {
-	cursorCache[cacheId] = MakeTable(C.GoString(dir))
-	cacheId++
+	tables[tableCounter] = MakeTable(C.GoString(dir))
+	tableCounter++
 
-	return cacheId - 1
+	return tableCounter - 1
 }
 
 //export TableDeclaration
 func TableDeclaration(tableId int64) *C.char {
-	decl := "CREATE TABLE x(fileName, sizeBytes"
-	for _, col := range cursorCache[tableId].Cols {
+	decl := "CREATE TABLE x(file_name, mod_time, size_bytes"
+	for _, col := range tables[tableId].Cols {
 		decl += ", frontmatter_" + col
 	}
 	decl += ")"
@@ -110,23 +122,28 @@ func TableDeclaration(tableId int64) *C.char {
 
 //export DeleteTable
 func DeleteTable(id int64) {
-	delete(cursorCache, id)
+	delete(tables, id)
 }
 
 //export CursorFileName
 func CursorFileName(tableId int64, rowId int64) *C.char {
-	return C.CString(cursorCache[tableId].Files[rowId].Path)
+	return C.CString(tables[tableId].Files[rowId].Path)
 }
 
 //export CursorFileLength
 func CursorFileLength(tableId int64, rowId int64) int {
-	return int(cursorCache[tableId].Files[rowId].Size)
+	return int(tables[tableId].Files[rowId].Size)
+}
+
+//export CursorModTime
+func CursorModTime(tableId int64, rowId int64) int {
+	return int(tables[tableId].Files[rowId].ModTime)
 }
 
 //export CursorFrontMatter
 func CursorFrontMatter(tableId int64, rowId int64, colId int) *C.char {
-	file := &cursorCache[tableId].Files[rowId]
-	val := file.FrontMatter[cursorCache[tableId].Cols[colId-2]]
+	file := &tables[tableId].Files[rowId]
+	val := file.FrontMatter[tables[tableId].Cols[colId-2]]
 	if val == nil {
 		return nil
 	} else {
@@ -136,7 +153,7 @@ func CursorFrontMatter(tableId int64, rowId int64, colId int) *C.char {
 
 //export TableLength
 func TableLength(tableId int64) int64 {
-	return int64(len(cursorCache[tableId].Files))
+	return int64(len(tables[tableId].Files))
 }
 
 func main() {}
