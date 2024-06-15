@@ -42,6 +42,7 @@ type Table struct {
 	Cols  []string
 }
 
+const FIXED_COLS int = 3
 var tableCounter int64 = 0
 var tables = make(map[int64]Table)
 
@@ -143,7 +144,7 @@ func CursorModTime(tableId int64, rowId int64) int {
 //export CursorFrontMatter
 func CursorFrontMatter(tableId int64, rowId int64, colId int) *C.char {
 	file := &tables[tableId].Files[rowId]
-	val := file.FrontMatter[tables[tableId].Cols[colId-2]]
+	val := file.FrontMatter[tables[tableId].Cols[colId-FIXED_COLS]]
 	if val == nil {
 		return nil
 	} else {

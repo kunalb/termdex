@@ -20,7 +20,7 @@ SQLITE_EXTENSION_INIT1
 sqlite3_int64 CreateTable(const char* dir);
 void DeleteTable(sqlite3_int64 id);
 char* TableDeclaration(sqlite3_int64 tableId);
- 
+
 char* CursorFileName(sqlite3_int64 tableId, sqlite3_int64 rowId);
 sqlite3_int64 CursorFileLength(sqlite3_int64 tableId, sqlite3_int64 rowId);
 sqlite3_int64 CursorModTime(sqlite3_int64 tableId, sqlite3_int64 rowId);
@@ -37,7 +37,7 @@ struct mdvtab_vtab {
 
 typedef struct mdvtab_cursor mdvtab_cursor;
 struct mdvtab_cursor {
-  sqlite3_vtab_cursor base; 
+  sqlite3_vtab_cursor base;
   sqlite3_int64 iRowid;
   sqlite_int64 iTableid;
 };
@@ -73,7 +73,7 @@ static int mdvtabCreate(
   }
 
   return rc;
-} 
+}
 
 static int mdvtabDestroy(sqlite3_vtab *pVtab){
   mdvtab_vtab *p = (mdvtab_vtab*)pVtab;
@@ -117,6 +117,9 @@ static int mdvtabColumn(
       break;
   case 1:
     sqlite3_result_int(ctx, CursorFileLength(pCur->iTableid, pCur->iRowid));
+    break;
+  case 2:
+    sqlite3_result_int(ctx, CursorModTime(pCur->iTableid, pCur->iRowid));
     break;
   default:
     sqlite3_result_text(ctx, CursorFrontMatter(pCur->iTableid, pCur->iRowid, i), -1, free);
