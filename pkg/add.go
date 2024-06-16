@@ -1,16 +1,16 @@
 package pkg
 
 import (
+	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"time"
-	"log"
 )
 
-
-func NewCard() {
+func NewCard(templatePath string) {
 	// TODO Figure out a reasonable template for this card
 	// Based on the other cards in the current dex folder
 	editorBinary := os.Getenv("EDITOR")
@@ -33,6 +33,16 @@ func NewCard() {
 
 	cardPath := filepath.Join(indexCardDir, fileName)
 
+	if templatePath != "" {
+		if copyErr := copyFile(cardPath, templatePath); copyErr != nil {
+			log.Printf("Couldn't apply template %s to %s because of %s\n", templatePath, cardPath, copyErr)
+		}
+	} else {
+		if defaultErr := makeDefaultCard(cardPath); defaultErr != nil {
+			log.Printf("Couldn't apply default template to %s because of %s\n", cardPath, defaultErr)
+		}
+	}
+
 	cmdPath, cmdPathErr := exec.LookPath(editorBinary)
 	if cmdPathErr != nil {
 		log.Panic(cmdPathErr)
@@ -47,9 +57,41 @@ func NewCard() {
 	if editErr != nil {
 		log.Fatal(editErr)
 	}
+}
 
-	cmdErr := cmd.Wait()
-	if cmdErr != nil {
-		log.Fatal("Failed to run vim: ", cmdErr)
+func copyFile(dstPath, srcPath string) error {
+	srcFile, err := os.Open(srcPath)
+	if err != nil {
+		return err
 	}
+	defer srcFile.Close()
+
+	dstFile, err := os.Create(dstPath)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	_, err = io.Copy(dstFile, srcFile)
+	if err != nil {
+		return err
+	}
+
+	err = dstFile.Sync()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func makeDefaultCard(dstPath string) error {
+	file, err := os.Create(dstPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	file.WriteString("---\ntitle:\ntags:\n---\n")
+	return nil
 }

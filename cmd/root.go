@@ -1,6 +1,5 @@
 /*
 Copyright © 2024 NAME HERE <EMAIL ADDRESS>
-
 */
 package cmd
 
@@ -23,13 +22,7 @@ Create and manage markdown files easily in the terminal.
 
 TermDex lets you quickly add, index and explore index cards
 -- inspired by FocalBoard, Notion, LogSeq, Obsidian -- but written
-as a unix application.
-
-Sub commands:
-  init    -- explicitly mark a folder as a termdex collection (useful for saving configuratons)
-  new     -- add an index card (markdown file)
-  board   -- visualize files as a kanban board
-  table   -- visualize files as a nested table
+as a combination of small unix-y applications.
 `,
 }
 

@@ -1,0 +1,30 @@
+#!/bin/bash -eu
+
+if [[ -n "${TERMDEX_DEBUG:-}" ]]; then
+  set -x
+fi
+
+ROOT="$(dirname "$(readlink "$0")")"
+readonly ROOT
+
+
+if [[ "$1" == "q" ]]; then
+  pushd "$ROOT"/mdvtab >/dev/null
+  go build -buildmode=c-shared -o mdvtab.so
+  popd >/dev/null
+
+  restart="$0 new"
+
+  sqlite3 :memory: -column -cmd \
+          ".load $ROOT/mdvtab/mdvtab" \
+          "SELECT file_name, frontmatter_title, frontmatter_tags FROM mdvtab WHERE ${2:-1=1} ORDER BY mod_time_s DESC" |\
+    fzf --preview 'file=$(echo {1} | cut -d " " -f 1); bat --theme=ansi --color=always --style=plain "$file"' \
+        --preview-window 'up' \
+        --bind 'enter:execute(nvim {1})' \
+        --bind "ctrl-N:become($restart)"
+else
+  pushd "$ROOT" >/dev/null
+  go build
+  popd >/dev/null
+  "$ROOT"/termdex "$@"
+fi
