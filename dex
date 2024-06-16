@@ -37,7 +37,7 @@ function main {
     "$EDITOR" -O "$file_path" \
               <(sqlite3 :memory: -cmd ".load $ROOT/mdvtab/mdvtab" \
                         "SELECT file_name FROM mdvtab WHERE frontmatter_tags LIKE '%$root_tag%' ORDER BY mod_time_s DESC" |\
-                  xargs tail -n1000)
+                  xargs tail -n+1)
   else
     "$ROOT"/termdex "$@"
   fi
