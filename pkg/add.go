@@ -92,6 +92,14 @@ func makeDefaultCard(dstPath string) error {
 	}
 	defer file.Close()
 
-	file.WriteString("---\ntitle:\ntags:\n---\n")
+	file.WriteString(`---
+title:                    # Quick summary, can leave body empty
+tags:                     # Simple categorization, preferably use more structured
+what:                     # Type: meeting, note, event, quote, task
+when:                     # Kanban style: today, tomorrow, week, month, quarter
+category:                 # Associate with a longer term note, with path (single)
+state:                    # Mainly for tasks: active, done, delegated, blocked, etc.
+---
+`)
 	return nil
 }
