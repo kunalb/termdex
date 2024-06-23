@@ -115,7 +115,7 @@ func CreateTable(dir *C.char) int64 {
 func TableDeclaration(tableId int64) *C.char {
 	decl := "CREATE TABLE x(file_name, size_bytes, mod_time_s"
 	for _, col := range tables[tableId].Cols {
-		decl += ", frontmatter_" + col
+		decl += ", [frontmatter_" + col + "]"
 	}
 	decl += ")"
 	return C.CString(decl)

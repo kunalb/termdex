@@ -20,24 +20,26 @@ function ensure_built {
 function main {
   ensure_built
 
-  if [[ "$1" == "q" ]]; then
+  if [[ "$1" == "sql" ]]; then
+    sqlite3 :memory: -column -cmd ".load $ROOT/mdvtab/mdvtab"
+  elif [[ "$1" == "q" ]]; then
     restart="$0 new"
     sqlite3 :memory: -column -cmd \
-            ".load $ROOT/mdvtab/mdvtab" \
-            "SELECT file_name, frontmatter_title, frontmatter_tags FROM mdvtab WHERE ${2:-1=1} ORDER BY mod_time_s DESC" |\
-      fzf --preview 'file=$(echo {1} | cut -d " " -f 1); bat --theme=ansi --color=always --style=plain "$file"' \
-          --preview-window 'up' \
-          --bind 'enter:execute(nvim {1})' \
-          --bind "ctrl-N:become($restart)"
+	    ".load $ROOT/mdvtab/mdvtab" \
+	    "SELECT file_name, frontmatter_title, frontmatter_tags FROM mdvtab WHERE ${2:-1=1} ORDER BY mod_time_s DESC" |\
+      fzf --preview 'file=$(echo {1} | cut -d " " -f 1); bat --theme=zenburn --color=always --style=plain "$file"' \
+	  --preview-window 'up:wrap' \
+	  --bind 'enter:execute(nvim {1})' \
+	  --bind "ctrl-N:become($restart)"
   elif [[ "$1" == "e" ]]; then
     mkdir -p "$2"
     file_path="$2/_.md"
     root_tag="$(realpath "$(dirname "$file_path")" --relative-to="$(pwd)")"
 
     "$EDITOR" -O "$file_path" \
-              <(sqlite3 :memory: -cmd ".load $ROOT/mdvtab/mdvtab" \
-                        "SELECT file_name FROM mdvtab WHERE frontmatter_tags LIKE '%$root_tag%' ORDER BY mod_time_s DESC" |\
-                  xargs tail -n+1)
+	      <(sqlite3 :memory: -cmd ".load $ROOT/mdvtab/mdvtab" \
+			"SELECT file_name FROM mdvtab WHERE frontmatter_tags LIKE '%$root_tag%' ORDER BY mod_time_s DESC" |\
+		  xargs tail -n+1)
   else
     "$ROOT"/termdex "$@"
   fi
