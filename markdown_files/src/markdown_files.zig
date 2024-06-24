@@ -38,6 +38,39 @@ export fn sqlite3_markdownfiles_init(
     return c.SQLITE_OK;
 }
 
+fn somefn() void {}
+
+// /*
+// ** This following structure defines all the methods for the
+// ** virtual table.
+// */
+const MarkdownFilesVTabModule = c.sqlite3_module{
+    .iVersion = 0,
+    .xCreate = 0,
+    .xConnect = 0,
+    .xBestIndex = 0,
+    .xDestroy = 0,
+    .xOpen = 0,
+    .xClose = 0,
+    .xFilter = 0,
+    .xNext = 0,
+    .xEof = 0,
+    .xColumn = 0,
+    .xRowid = 0,
+    .xUpdate = 0,
+    .xBegin = 0,
+    .xSync = 0,
+    .xCommit = 0,
+    .xRollback = 0,
+    .xFindMethod = 0,
+    .xRename = 0,
+    .xSavepoint = 0,
+    .xRelease = 0,
+    .xRollbackTo = 0,
+    .xShadowName = 0,
+    // .xIntegrity = 0,
+};
+
 //
 // /* templatevtab_vtab is a subclass of sqlite3_vtab which is
 // ** underlying representation of the virtual table
@@ -209,38 +242,6 @@ export fn sqlite3_markdownfiles_init(
 // pIdxInfo->estimatedRows = 10;
 // return SQLITE_OK;
 // }
-//
-// /*
-// ** This following structure defines all the methods for the
-// ** virtual table.
-// */
-// static sqlite3_module templatevtabModule = {
-// /* iVersion    */ 0,
-// /* xCreate     */ 0,
-// /* xConnect    */ templatevtabConnect,
-// /* xBestIndex  */ templatevtabBestIndex,
-// /* xDisconnect */ templatevtabDisconnect,
-// /* xDestroy    */ 0,
-// /* xOpen       */ templatevtabOpen,
-// /* xClose      */ templatevtabClose,
-// /* xFilter     */ templatevtabFilter,
-// /* xNext       */ templatevtabNext,
-// /* xEof        */ templatevtabEof,
-// /* xColumn     */ templatevtabColumn,
-// /* xRowid      */ templatevtabRowid,
-// /* xUpdate     */ 0,
-// /* xBegin      */ 0,
-// /* xSync       */ 0,
-// /* xCommit     */ 0,
-// /* xRollback   */ 0,
-// /* xFindMethod */ 0,
-// /* xRename     */ 0,
-// /* xSavepoint  */ 0,
-// /* xRelease    */ 0,
-// /* xRollbackTo */ 0,
-// /* xShadowName */ 0,
-// /* xIntegrity  */ 0
-// };
 //
 //
 //
