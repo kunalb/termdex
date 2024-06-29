@@ -24,6 +24,8 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
 
+    lib.linkSystemLibrary("sqlite3");
+
     // This declares intent for the library to be installed into the standard
     // location when the user invokes the "install" step (the default step when
     // running `zig build`).

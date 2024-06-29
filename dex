@@ -29,7 +29,7 @@ function main {
 	    "SELECT file_name, frontmatter_title, frontmatter_tags FROM mdvtab WHERE ${2:-1=1} ORDER BY mod_time_s DESC" |\
       fzf --preview 'file=$(echo {1} | cut -d " " -f 1); bat --theme=zenburn --color=always --style=plain "$file"' \
 	  --preview-window 'up:wrap' \
-	  --bind 'enter:execute(nvim {1})' \
+	  --bind 'enter:execute("$EDITOR" {1})' \
 	  --bind "ctrl-N:become($restart)"
   elif [[ "$1" == "e" ]]; then
     mkdir -p "$2"

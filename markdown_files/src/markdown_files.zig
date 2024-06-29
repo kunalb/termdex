@@ -26,19 +26,16 @@ var sqlite3_api: [*c]const c.sqlite3_api_routines = undefined;
 // rc = sqlite3_create_module(db, "templatevtab", &templatevtabModule, 0);
 // return rc;
 // }
-export fn sqlite3_markdownfiles_init(
+export fn sqlite3_markdown_files_init(
     db: *c.sqlite3,
     pzErrMsg: [*c][*c]u8,
     pApi: [*c]const c.sqlite3_api_routines,
 ) c_int {
     sqlite3_api = pApi;
-    _ = db;
     _ = pzErrMsg;
 
-    return c.SQLITE_OK;
+    return c.sqlite3_create_module(db, "markdown_files", &MarkdownFilesVTabModule, @ptrFromInt(0));
 }
-
-fn somefn() void {}
 
 // /*
 // ** This following structure defines all the methods for the
@@ -46,28 +43,28 @@ fn somefn() void {}
 // */
 const MarkdownFilesVTabModule = c.sqlite3_module{
     .iVersion = 0,
-    .xCreate = 0,
-    .xConnect = 0,
-    .xBestIndex = 0,
-    .xDestroy = 0,
-    .xOpen = 0,
-    .xClose = 0,
-    .xFilter = 0,
-    .xNext = 0,
-    .xEof = 0,
-    .xColumn = 0,
-    .xRowid = 0,
-    .xUpdate = 0,
-    .xBegin = 0,
-    .xSync = 0,
-    .xCommit = 0,
-    .xRollback = 0,
-    .xFindMethod = 0,
-    .xRename = 0,
-    .xSavepoint = 0,
-    .xRelease = 0,
-    .xRollbackTo = 0,
-    .xShadowName = 0,
+    .xCreate = @ptrFromInt(0),
+    .xConnect = @ptrFromInt(0),
+    .xBestIndex = @ptrFromInt(0),
+    .xDestroy = @ptrFromInt(0),
+    .xOpen = @ptrFromInt(0),
+    .xClose = @ptrFromInt(0),
+    .xFilter = @ptrFromInt(0),
+    .xNext = @ptrFromInt(0),
+    .xEof = @ptrFromInt(0),
+    .xColumn = @ptrFromInt(0),
+    .xRowid = @ptrFromInt(0),
+    .xUpdate = @ptrFromInt(0),
+    .xBegin = @ptrFromInt(0),
+    .xSync = @ptrFromInt(0),
+    .xCommit = @ptrFromInt(0),
+    .xRollback = @ptrFromInt(0),
+    .xFindFunction = @ptrFromInt(0),
+    .xRename = @ptrFromInt(0),
+    .xSavepoint = @ptrFromInt(0),
+    .xRelease = @ptrFromInt(0),
+    .xRollbackTo = @ptrFromInt(0),
+    .xShadowName = @ptrFromInt(0),
     // .xIntegrity = 0,
 };
 
