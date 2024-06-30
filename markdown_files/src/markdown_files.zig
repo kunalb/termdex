@@ -5,11 +5,15 @@ const c = @cImport({
     @cInclude("string.h");
 });
 
+// Keep things simple for interop with C, potentially revisit as needed
+const c_allocator = std.heap.c_allocator;
+
 // Corresponding to the macro SQLITE_EXTENSION_INIT1
 var sqlite3_api: [*c]const c.sqlite3_api_routines = undefined;
 
 pub const VTab = extern struct {
     base: c.sqlite3_vtab = std.mem.zeroes(c.sqlite3_vtab),
+    root_dir: [*:0]u8,
 };
 pub const Cursor = extern struct {
     base: c.sqlite3_vtab_cursor = std.mem.zeroes(c.sqlite3_vtab_cursor),
@@ -18,22 +22,43 @@ pub const Cursor = extern struct {
 
 pub fn vtabConnect(db: ?*c.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]c.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
     _ = aux;
-    _ = argc;
-    _ = argv;
-    _ = pz_err;
+
+    if (argc > 4) {
+        pz_err.* = c.sqlite3_mprintf("Can specify at most one argument: the root directory for markdown files (received %d).", argc - 3);
+        return c.SQLITE_ERROR;
+    }
 
     var new_vtab: *VTab = undefined;
     const rc: c_int = sqlite3_api.*.declare_vtab.?(db, "CREATE TABLE x(a,b)");
-    if (rc == @as(c_int, 0)) {
-        new_vtab = std.heap.c_allocator.create(VTab) catch return c.SQLITE_NOMEM;
-        pp_vtab.* = @as([*c]c.sqlite3_vtab, @ptrCast(@alignCast(new_vtab)));
+    if (rc != c.SQLITE_OK) {
+        return rc;
     }
+
+    new_vtab = c_allocator.create(VTab) catch return c.SQLITE_NOMEM;
+    if (argc == 4) {
+        const len = c.strlen(argv[3]);
+        new_vtab.root_dir = c_allocator.allocSentinel(u8, len, 0) catch return c.SQLITE_NOMEM;
+        @memcpy(new_vtab.root_dir, argv[3][0..len]);
+    } else {
+        var buf: [std.fs.MAX_NAME_BYTES]u8 = undefined;
+        const cwd = std.process.getCwd(&buf) catch {
+            pz_err.* = c.sqlite3_mprintf("Could not determine current working directory!");
+            return c.SQLITE_ERROR;
+        };
+        new_vtab.root_dir = c_allocator.allocSentinel(u8, cwd.len, 0) catch return c.SQLITE_NOMEM;
+        @memcpy(new_vtab.root_dir, cwd);
+    }
+
+    std.debug.print("Setting root directory: {s}", .{new_vtab.root_dir});
+    pp_vtab.* = @as([*c]c.sqlite3_vtab, @ptrCast(@alignCast(new_vtab)));
+
     return rc;
 }
 
 pub fn vtabDisconnect(p_vtab: [*c]c.sqlite3_vtab) callconv(.C) c_int {
     const p: *VTab = @as(*VTab, @ptrCast(@alignCast(p_vtab)));
-    std.heap.c_allocator.destroy(p);
+    c_allocator.free(p.root_dir[0..(std.mem.len(p.root_dir) + 1)]);
+    c_allocator.destroy(p);
 
     return 0;
 }
@@ -134,11 +159,11 @@ pub fn vtabBestIndex(arg_tab: [*c]c.sqlite3_vtab, arg_pIdxInfo: [*c]c.sqlite3_in
 }
 const MarkdownFilesVTabModule = c.sqlite3_module{
     .iVersion = 0,
-    .xCreate = @ptrFromInt(0),
+    .xCreate = vtabConnect,
     .xConnect = vtabConnect,
     .xBestIndex = vtabBestIndex,
     .xDisconnect = vtabDisconnect,
-    .xDestroy = @ptrFromInt(0),
+    .xDestroy = vtabDisconnect,
     .xOpen = vtabOpen,
     .xClose = vtabClose,
     .xFilter = vtabFilter,
@@ -172,5 +197,5 @@ export fn sqlite3_markdown_files_init(
     if (rc != c.SQLITE_OK) {
         return rc;
     }
-    return c.sqlite3_create_module(db, "markdown_files", &MarkdownFilesVTabModule, @ptrFromInt(0));
+    return c.sqlite3_create_module(db, "markdown_files\x00", &MarkdownFilesVTabModule, @ptrFromInt(0));
 }
