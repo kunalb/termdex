@@ -9,40 +9,35 @@ const c = @cImport({
 var sqlite3_api: [*c]const c.sqlite3_api_routines = undefined;
 
 pub const VTab = extern struct {
-    base: c.sqlite3_vtab = @import("std").mem.zeroes(c.sqlite3_vtab),
+    base: c.sqlite3_vtab = std.mem.zeroes(c.sqlite3_vtab),
 };
 pub const Cursor = extern struct {
-    base: c.sqlite3_vtab_cursor = @import("std").mem.zeroes(c.sqlite3_vtab_cursor),
-    iRowid: c.sqlite3_int64 = @import("std").mem.zeroes(c.sqlite3_int64),
+    base: c.sqlite3_vtab_cursor = std.mem.zeroes(c.sqlite3_vtab_cursor),
+    iRowid: c.sqlite3_int64 = std.mem.zeroes(c.sqlite3_int64),
 };
 
-pub fn vTabConnect(db: ?*c.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, vtab: [*c][*c]c.sqlite3_vtab, err: [*c][*c]u8) callconv(.C) c_int {
+pub fn vtabConnect(db: ?*c.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]c.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
     _ = aux;
     _ = argc;
     _ = argv;
-    _ = err;
+    _ = pz_err;
 
-    var new_vtab: [*c]VTab = undefined;
-    _ = &new_vtab;
+    var new_vtab: *VTab = undefined;
     const rc: c_int = sqlite3_api.*.declare_vtab.?(db, "CREATE TABLE x(a,b)");
     if (rc == @as(c_int, 0)) {
-        new_vtab = @as([*c]VTab, @ptrCast(@alignCast(sqlite3_api.*.malloc.?(@as(c_int, @bitCast(@as(c_uint, @truncate(@sizeOf(VTab)))))))));
-        vtab.* = @as([*c]c.sqlite3_vtab, @ptrCast(@alignCast(new_vtab)));
-        if (new_vtab == null) return 7;
-        _ = c.memset(@as(?*anyopaque, @ptrCast(new_vtab)), @as(c_int, 0), @sizeOf(VTab));
+        new_vtab = std.heap.c_allocator.create(VTab) catch return c.SQLITE_NOMEM;
+        pp_vtab.* = @as([*c]c.sqlite3_vtab, @ptrCast(@alignCast(new_vtab)));
     }
     return rc;
 }
 
-pub fn vTabDisconnect(arg_pVtab: [*c]c.sqlite3_vtab) callconv(.C) c_int {
-    var pVtab = arg_pVtab;
-    _ = &pVtab;
-    var p: [*c]VTab = @as([*c]VTab, @ptrCast(@alignCast(pVtab)));
-    _ = &p;
-    sqlite3_api.*.free.?(@as(?*anyopaque, @ptrCast(p)));
+pub fn vtabDisconnect(p_vtab: [*c]c.sqlite3_vtab) callconv(.C) c_int {
+    const p: *VTab = @as(*VTab, @ptrCast(@alignCast(p_vtab)));
+    std.heap.c_allocator.destroy(p);
+
     return 0;
 }
-pub fn vTabOpen(arg_p: [*c]c.sqlite3_vtab, arg_ppCursor: [*c][*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
+pub fn vtabOpen(arg_p: [*c]c.sqlite3_vtab, arg_ppCursor: [*c][*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     var p = arg_p;
     _ = &p;
     var ppCursor = arg_ppCursor;
@@ -55,7 +50,7 @@ pub fn vTabOpen(arg_p: [*c]c.sqlite3_vtab, arg_ppCursor: [*c][*c]c.sqlite3_vtab_
     ppCursor.* = &pCur.*.base;
     return 0;
 }
-pub fn vTabClose(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
+pub fn vtabClose(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     var cur = arg_cur;
     _ = &cur;
     var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(cur)));
@@ -63,7 +58,7 @@ pub fn vTabClose(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     sqlite3_api.*.free.?(@as(?*anyopaque, @ptrCast(pCur)));
     return 0;
 }
-pub fn vTabNext(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
+pub fn vtabNext(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     var cur = arg_cur;
     _ = &cur;
     var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(cur)));
@@ -71,7 +66,7 @@ pub fn vTabNext(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     pCur.*.iRowid += 1;
     return 0;
 }
-pub fn vTabColumn(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_ctx: ?*c.sqlite3_context, arg_i: c_int) callconv(.C) c_int {
+pub fn vtabColumn(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_ctx: ?*c.sqlite3_context, arg_i: c_int) callconv(.C) c_int {
     var cur = arg_cur;
     _ = &cur;
     var ctx = arg_ctx;
@@ -95,7 +90,7 @@ pub fn vTabColumn(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_ctx: ?*c.sqlite3_conte
     }
     return 0;
 }
-pub fn vTabRowid(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_pRowid: [*c]c.sqlite_int64) callconv(.C) c_int {
+pub fn vtabRowid(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_pRowid: [*c]c.sqlite_int64) callconv(.C) c_int {
     var cur = arg_cur;
     _ = &cur;
     var pRowid = arg_pRowid;
@@ -105,14 +100,14 @@ pub fn vTabRowid(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_pRowid: [*c]c.sqlite_in
     pRowid.* = pCur.*.iRowid;
     return 0;
 }
-pub fn vTabEof(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
+pub fn vtabEof(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     var cur = arg_cur;
     _ = &cur;
     var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(cur)));
     _ = &pCur;
     return @intFromBool(pCur.*.iRowid >= @as(c.sqlite3_int64, @bitCast(@as(c_longlong, @as(c_int, 10)))));
 }
-pub fn vTabFilter(arg_pVtabCursor: [*c]c.sqlite3_vtab_cursor, arg_idxNum: c_int, arg_idxStr: [*c]const u8, arg_argc: c_int, arg_argv: [*c]?*c.sqlite3_value) callconv(.C) c_int {
+pub fn vtabFilter(arg_pVtabCursor: [*c]c.sqlite3_vtab_cursor, arg_idxNum: c_int, arg_idxStr: [*c]const u8, arg_argc: c_int, arg_argv: [*c]?*c.sqlite3_value) callconv(.C) c_int {
     var pVtabCursor = arg_pVtabCursor;
     _ = &pVtabCursor;
     var idxNum = arg_idxNum;
@@ -128,7 +123,7 @@ pub fn vTabFilter(arg_pVtabCursor: [*c]c.sqlite3_vtab_cursor, arg_idxNum: c_int,
     pCur.*.iRowid = 1;
     return 0;
 }
-pub fn vTabBestIndex(arg_tab: [*c]c.sqlite3_vtab, arg_pIdxInfo: [*c]c.sqlite3_index_info) callconv(.C) c_int {
+pub fn vtabBestIndex(arg_tab: [*c]c.sqlite3_vtab, arg_pIdxInfo: [*c]c.sqlite3_index_info) callconv(.C) c_int {
     var tab = arg_tab;
     _ = &tab;
     var pIdxInfo = arg_pIdxInfo;
@@ -140,17 +135,17 @@ pub fn vTabBestIndex(arg_tab: [*c]c.sqlite3_vtab, arg_pIdxInfo: [*c]c.sqlite3_in
 const MarkdownFilesVTabModule = c.sqlite3_module{
     .iVersion = 0,
     .xCreate = @ptrFromInt(0),
-    .xConnect = vTabConnect,
-    .xBestIndex = vTabBestIndex,
-    .xDisconnect = vTabDisconnect,
+    .xConnect = vtabConnect,
+    .xBestIndex = vtabBestIndex,
+    .xDisconnect = vtabDisconnect,
     .xDestroy = @ptrFromInt(0),
-    .xOpen = vTabOpen,
-    .xClose = vTabClose,
-    .xFilter = vTabFilter,
-    .xNext = vTabNext,
-    .xEof = vTabEof,
-    .xColumn = vTabColumn,
-    .xRowid = vTabRowid,
+    .xOpen = vtabOpen,
+    .xClose = vtabClose,
+    .xFilter = vtabFilter,
+    .xNext = vtabNext,
+    .xEof = vtabEof,
+    .xColumn = vtabColumn,
+    .xRowid = vtabRowid,
     .xUpdate = @ptrFromInt(0),
     .xBegin = @ptrFromInt(0),
     .xSync = @ptrFromInt(0),
