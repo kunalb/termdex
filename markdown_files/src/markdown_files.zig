@@ -36,7 +36,7 @@ pub fn vtabConnect(db: ?*c.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]con
     }
 
     var new_vtab: *VTab = undefined;
-    const rc: c_int = sqlite3_api.*.declare_vtab.?(db, "CREATE TABLE x(path,basename)");
+    const rc: c_int = sqlite3_api.*.declare_vtab.?(db, "CREATE TABLE x(path,basename,contents)");
     if (rc != c.SQLITE_OK) {
         return rc;
     }
@@ -119,11 +119,19 @@ pub fn vtabColumn(p_cur: [*c]c.sqlite3_vtab_cursor, p_ctx: ?*c.sqlite3_context, 
     switch (i) {
         0 => {
             const path = state.entry.?.path;
+            // Potential problem: it's not entirely clear if keeping the string till next row is called is fine
             sqlite3_api.*.result_text.?(ctx, path.ptr, @intCast(path.len), null);
         },
         1 => {
             const basename = state.entry.?.basename;
+            // Ditto
             sqlite3_api.*.result_text.?(ctx, basename.ptr, @intCast(basename.len), null);
+        },
+        2 => {
+            // const entry = state.entry.?;
+            // const contents = entry.dir.readFileAlloc(c_allocator, entry.path, std.math.maxInt(usize)) catch return c.SQLITE_ERROR;
+            // sqlite3_api.*.result_text.?(ctx, contents.ptr, @intCast(contents.len), null);
+            sqlite3_api.*.result_null.?(ctx);
         },
         else => sqlite3_api.*.result_int64.?(ctx, row_id * row_id),
     }
