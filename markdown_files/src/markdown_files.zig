@@ -24,7 +24,7 @@ pub const VTab = extern struct {
 pub const Cursor = extern struct {
     base: c.sqlite3_vtab_cursor = std.mem.zeroes(c.sqlite3_vtab_cursor),
     row_id: c.sqlite3_int64 = 0,
-    iter: ?*anyopaque = null, // CursorState
+    state: ?*anyopaque = null, // CursorState
 };
 
 pub fn vtabConnect(db: ?*c.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]c.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
@@ -36,7 +36,7 @@ pub fn vtabConnect(db: ?*c.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]con
     }
 
     var new_vtab: *VTab = undefined;
-    const rc: c_int = sqlite3_api.*.declare_vtab.?(db, "CREATE TABLE x(a,b)");
+    const rc: c_int = sqlite3_api.*.declare_vtab.?(db, "CREATE TABLE x(path,basename)");
     if (rc != c.SQLITE_OK) {
         return rc;
     }
@@ -82,14 +82,14 @@ pub fn vtabOpen(p_vtab: [*c]c.sqlite3_vtab, pp_cursor: [*c][*c]c.sqlite3_vtab_cu
     var p_state: *CursorState = c_allocator.create(CursorState) catch return c.SQLITE_NOMEM;
     p_state.*.walker = walker;
     p_state.*.entry = p_state.walker.next() catch return c.SQLITE_ERROR;
-    new_cursor.iter = p_state;
+    new_cursor.state = p_state;
     pp_cursor.* = &new_cursor.*.base;
     return 0;
 }
 
 pub fn vtabClose(p_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     const cur = @as(*Cursor, @ptrCast(@alignCast(p_base)));
-    const state = @as(*CursorState, @ptrCast(@alignCast(cur.iter.?)));
+    const state = @as(*CursorState, @ptrCast(@alignCast(cur.state.?)));
     c_allocator.destroy(state);
     c_allocator.destroy(cur);
     return c.SQLITE_OK;
@@ -99,34 +99,35 @@ pub fn vtabNext(p_cur_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     const cursor: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(p_cur_base)));
     cursor.*.row_id += 1;
 
-    var state = @as(*CursorState, @ptrCast(@alignCast(cursor.*.iter)));
-    state.entry = state.walker.next() catch return c.SQLITE_ERROR;
+    var state = @as(*CursorState, @ptrCast(@alignCast(cursor.*.state)));
+
+    while (true) {
+        state.entry = state.walker.next() catch return c.SQLITE_ERROR;
+        if (state.entry == null or state.entry.?.kind == std.fs.Dir.Entry.Kind.file) {
+            break;
+        }
+    }
     return 0;
 }
 
-pub fn vtabColumn(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_ctx: ?*c.sqlite3_context, arg_i: c_int) callconv(.C) c_int {
-    var cur = arg_cur;
-    _ = &cur;
-    var ctx = arg_ctx;
-    _ = &ctx;
-    var i = arg_i;
-    _ = &i;
-    var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(cur)));
-    _ = &pCur;
-    while (true) {
-        switch (i) {
-            @as(c_int, 0) => {
-                sqlite3_api.*.result_int.?(ctx, @as(c_int, @bitCast(@as(c_int, @truncate(@as(c.sqlite3_int64, @bitCast(@as(c_longlong, @as(c_int, 1000)))) + pCur.*.row_id)))));
-                break;
-            },
-            else => {
-                sqlite3_api.*.result_int.?(ctx, @as(c_int, @bitCast(@as(c_int, @truncate(@as(c.sqlite3_int64, @bitCast(@as(c_longlong, @as(c_int, 2000)))) + pCur.*.row_id)))));
-                break;
-            },
-        }
-        break;
+pub fn vtabColumn(p_cur: [*c]c.sqlite3_vtab_cursor, p_ctx: ?*c.sqlite3_context, i: c_int) callconv(.C) c_int {
+    const ctx = p_ctx.?;
+    const cur = @as(*Cursor, @ptrCast(@alignCast(p_cur)));
+    const state = @as(*CursorState, @ptrCast(@alignCast(cur.state.?)));
+    const row_id = cur.*.row_id;
+
+    switch (i) {
+        0 => {
+            const path = state.entry.?.path;
+            sqlite3_api.*.result_text.?(ctx, path.ptr, @intCast(path.len), null);
+        },
+        1 => {
+            const basename = state.entry.?.basename;
+            sqlite3_api.*.result_text.?(ctx, basename.ptr, @intCast(basename.len), null);
+        },
+        else => sqlite3_api.*.result_int64.?(ctx, row_id * row_id),
     }
-    return 0;
+    return c.SQLITE_OK;
 }
 
 pub fn vtabRowid(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_pRowid: [*c]c.sqlite_int64) callconv(.C) c_int {
@@ -142,7 +143,7 @@ pub fn vtabRowid(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_pRowid: [*c]c.sqlite_in
 
 pub fn vtabEof(p_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     const cur = @as(*Cursor, @ptrCast(@alignCast(p_base)));
-    const state = @as(*CursorState, @ptrCast(@alignCast(cur.iter.?)));
+    const state = @as(*CursorState, @ptrCast(@alignCast(cur.state.?)));
     return @intFromBool(state.entry == null);
 }
 
