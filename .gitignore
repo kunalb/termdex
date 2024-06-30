@@ -1,2 +1,5 @@
 build
 termdex
+.#*
+.gdb_history
+TAGS
