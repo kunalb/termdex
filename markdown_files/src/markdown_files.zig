@@ -8,45 +8,36 @@ const c = @cImport({
 // Corresponding to the macro SQLITE_EXTENSION_INIT1
 var sqlite3_api: [*c]const c.sqlite3_api_routines = undefined;
 
-pub const struct_markdown_files_vtab = extern struct {
+pub const VTab = extern struct {
     base: c.sqlite3_vtab = @import("std").mem.zeroes(c.sqlite3_vtab),
 };
-pub const markdown_files_vtab = struct_markdown_files_vtab;
-pub const struct_markdown_files_cursor = extern struct {
+pub const Cursor = extern struct {
     base: c.sqlite3_vtab_cursor = @import("std").mem.zeroes(c.sqlite3_vtab_cursor),
     iRowid: c.sqlite3_int64 = @import("std").mem.zeroes(c.sqlite3_int64),
 };
-pub const markdown_files_cursor = struct_markdown_files_cursor;
-pub fn markdown_filesConnect(arg_db: ?*c.sqlite3, arg_pAux: ?*anyopaque, arg_argc: c_int, arg_argv: [*c]const [*c]const u8, arg_ppVtab: [*c][*c]c.sqlite3_vtab, arg_pzErr: [*c][*c]u8) callconv(.C) c_int {
-    var db = arg_db;
-    _ = &db;
-    var pAux = arg_pAux;
-    _ = &pAux;
-    var argc = arg_argc;
-    _ = &argc;
-    var argv = arg_argv;
-    _ = &argv;
-    var ppVtab = arg_ppVtab;
-    _ = &ppVtab;
-    var pzErr = arg_pzErr;
-    _ = &pzErr;
-    var pNew: [*c]markdown_files_vtab = undefined;
-    _ = &pNew;
-    var rc: c_int = undefined;
-    _ = &rc;
-    rc = sqlite3_api.*.declare_vtab.?(db, "CREATE TABLE x(a,b)\x00");
+
+pub fn connect(db: ?*c.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, vtab: [*c][*c]c.sqlite3_vtab, err: [*c][*c]u8) callconv(.C) c_int {
+    _ = aux;
+    _ = argc;
+    _ = argv;
+    _ = err;
+
+    var new_vtab: [*c]VTab = undefined;
+    _ = &new_vtab;
+    const rc: c_int = sqlite3_api.*.declare_vtab.?(db, "CREATE TABLE x(a,b)");
     if (rc == @as(c_int, 0)) {
-        pNew = @as([*c]markdown_files_vtab, @ptrCast(@alignCast(sqlite3_api.*.malloc.?(@as(c_int, @bitCast(@as(c_uint, @truncate(@sizeOf(markdown_files_vtab)))))))));
-        ppVtab.* = @as([*c]c.sqlite3_vtab, @ptrCast(@alignCast(pNew)));
-        if (pNew == null) return 7;
-        _ = c.memset(@as(?*anyopaque, @ptrCast(pNew)), @as(c_int, 0), @sizeOf(markdown_files_vtab));
+        new_vtab = @as([*c]VTab, @ptrCast(@alignCast(sqlite3_api.*.malloc.?(@as(c_int, @bitCast(@as(c_uint, @truncate(@sizeOf(VTab)))))))));
+        vtab.* = @as([*c]c.sqlite3_vtab, @ptrCast(@alignCast(new_vtab)));
+        if (new_vtab == null) return 7;
+        _ = c.memset(@as(?*anyopaque, @ptrCast(new_vtab)), @as(c_int, 0), @sizeOf(VTab));
     }
     return rc;
 }
+
 pub fn markdown_filesDisconnect(arg_pVtab: [*c]c.sqlite3_vtab) callconv(.C) c_int {
     var pVtab = arg_pVtab;
     _ = &pVtab;
-    var p: [*c]markdown_files_vtab = @as([*c]markdown_files_vtab, @ptrCast(@alignCast(pVtab)));
+    var p: [*c]VTab = @as([*c]VTab, @ptrCast(@alignCast(pVtab)));
     _ = &p;
     sqlite3_api.*.free.?(@as(?*anyopaque, @ptrCast(p)));
     return 0;
@@ -56,18 +47,18 @@ pub fn markdown_filesOpen(arg_p: [*c]c.sqlite3_vtab, arg_ppCursor: [*c][*c]c.sql
     _ = &p;
     var ppCursor = arg_ppCursor;
     _ = &ppCursor;
-    var pCur: [*c]markdown_files_cursor = undefined;
+    var pCur: [*c]Cursor = undefined;
     _ = &pCur;
-    pCur = @as([*c]markdown_files_cursor, @ptrCast(@alignCast(sqlite3_api.*.malloc.?(@as(c_int, @bitCast(@as(c_uint, @truncate(@sizeOf(markdown_files_cursor)))))))));
+    pCur = @as([*c]Cursor, @ptrCast(@alignCast(sqlite3_api.*.malloc.?(@as(c_int, @bitCast(@as(c_uint, @truncate(@sizeOf(Cursor)))))))));
     if (pCur == null) return 7;
-    _ = c.memset(@as(?*anyopaque, @ptrCast(pCur)), @as(c_int, 0), @sizeOf(markdown_files_cursor));
+    _ = c.memset(@as(?*anyopaque, @ptrCast(pCur)), @as(c_int, 0), @sizeOf(Cursor));
     ppCursor.* = &pCur.*.base;
     return 0;
 }
 pub fn markdown_filesClose(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     var cur = arg_cur;
     _ = &cur;
-    var pCur: [*c]markdown_files_cursor = @as([*c]markdown_files_cursor, @ptrCast(@alignCast(cur)));
+    var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(cur)));
     _ = &pCur;
     sqlite3_api.*.free.?(@as(?*anyopaque, @ptrCast(pCur)));
     return 0;
@@ -75,7 +66,7 @@ pub fn markdown_filesClose(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_in
 pub fn markdown_filesNext(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     var cur = arg_cur;
     _ = &cur;
-    var pCur: [*c]markdown_files_cursor = @as([*c]markdown_files_cursor, @ptrCast(@alignCast(cur)));
+    var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(cur)));
     _ = &pCur;
     pCur.*.iRowid += 1;
     return 0;
@@ -87,7 +78,7 @@ pub fn markdown_filesColumn(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_ctx: ?*c.sql
     _ = &ctx;
     var i = arg_i;
     _ = &i;
-    var pCur: [*c]markdown_files_cursor = @as([*c]markdown_files_cursor, @ptrCast(@alignCast(cur)));
+    var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(cur)));
     _ = &pCur;
     while (true) {
         switch (i) {
@@ -109,7 +100,7 @@ pub fn markdown_filesRowid(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_pRowid: [*c]c
     _ = &cur;
     var pRowid = arg_pRowid;
     _ = &pRowid;
-    var pCur: [*c]markdown_files_cursor = @as([*c]markdown_files_cursor, @ptrCast(@alignCast(cur)));
+    var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(cur)));
     _ = &pCur;
     pRowid.* = pCur.*.iRowid;
     return 0;
@@ -117,7 +108,7 @@ pub fn markdown_filesRowid(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_pRowid: [*c]c
 pub fn markdown_filesEof(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     var cur = arg_cur;
     _ = &cur;
-    var pCur: [*c]markdown_files_cursor = @as([*c]markdown_files_cursor, @ptrCast(@alignCast(cur)));
+    var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(cur)));
     _ = &pCur;
     return @intFromBool(pCur.*.iRowid >= @as(c.sqlite3_int64, @bitCast(@as(c_longlong, @as(c_int, 10)))));
 }
@@ -132,7 +123,7 @@ pub fn markdown_filesFilter(arg_pVtabCursor: [*c]c.sqlite3_vtab_cursor, arg_idxN
     _ = &argc;
     var argv = arg_argv;
     _ = &argv;
-    var pCur: [*c]markdown_files_cursor = @as([*c]markdown_files_cursor, @ptrCast(@alignCast(pVtabCursor)));
+    var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(pVtabCursor)));
     _ = &pCur;
     pCur.*.iRowid = 1;
     return 0;
@@ -149,7 +140,7 @@ pub fn markdown_filesBestIndex(arg_tab: [*c]c.sqlite3_vtab, arg_pIdxInfo: [*c]c.
 const MarkdownFilesVTabModule = c.sqlite3_module{
     .iVersion = 0,
     .xCreate = @ptrFromInt(0),
-    .xConnect = markdown_filesConnect,
+    .xConnect = connect,
     .xBestIndex = markdown_filesBestIndex,
     .xDisconnect = markdown_filesDisconnect,
     .xDestroy = @ptrFromInt(0),
@@ -181,11 +172,10 @@ export fn sqlite3_markdown_files_init(
 ) callconv(.C) c_int {
     // Corresponding to the macro SQLITE_EXTENSION_INIT2
     sqlite3_api = pApi;
-    // c.sqlite3_api = pApi;
-
-    // return c.sqlite3_markdown_files_init_c(db, pzErrMsg, pApi);
     _ = pzErrMsg;
-    _ = c.sqlite3_malloc(0);
-    const name = "markdown_files";
-    return c.sqlite3_create_module(db, name.ptr, &MarkdownFilesVTabModule, @ptrFromInt(0));
+    const rc: c_int = c.sqlite3_initialize();
+    if (rc != c.SQLITE_OK) {
+        return rc;
+    }
+    return c.sqlite3_create_module(db, "markdown_files", &MarkdownFilesVTabModule, @ptrFromInt(0));
 }
