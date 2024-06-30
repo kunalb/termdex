@@ -14,6 +14,7 @@ var sqlite3_api: [*c]const c.sqlite3_api_routines = undefined;
 pub const CursorState: type = struct {
     walker: std.fs.Dir.Walker,
     entry: ?std.fs.Dir.Walker.Entry = null,
+    stat: ?std.fs.File.Stat = null,
 };
 
 pub const VTab = extern struct {
@@ -36,7 +37,7 @@ pub fn vtabConnect(db: ?*c.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]con
     }
 
     var new_vtab: *VTab = undefined;
-    const rc: c_int = sqlite3_api.*.declare_vtab.?(db, "CREATE TABLE x(path,basename,contents)");
+    const rc: c_int = sqlite3_api.*.declare_vtab.?(db, "CREATE TABLE x(path,basename,contents,size_bytes,ctime_s,mtime_s,atime_s)");
     if (rc != c.SQLITE_OK) {
         return rc;
     }
@@ -103,6 +104,8 @@ pub fn vtabNext(p_cur_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
 
     while (true) {
         state.entry = state.walker.next() catch return c.SQLITE_ERROR;
+        state.stat = null;
+
         if (state.entry == null or state.entry.?.kind == std.fs.Dir.Entry.Kind.file) {
             break;
         }
@@ -116,6 +119,20 @@ pub fn vtabColumn(p_cur: [*c]c.sqlite3_vtab_cursor, p_ctx: ?*c.sqlite3_context, 
     const state = @as(*CursorState, @ptrCast(@alignCast(cur.state.?)));
     const row_id = cur.*.row_id;
 
+    const tab: *VTab = @ptrCast(@alignCast(cur.base.pVtab));
+    const entry = state.entry.?;
+    const dir = entry.dir;
+    const absPath = std.fs.path.join(c_allocator, &[_][]const u8{ tab.root_dir[0..std.mem.len(tab.root_dir)], entry.path }) catch unreachable;
+    defer c_allocator.free(absPath);
+
+    // Stat columns
+    if (i >= 3 and state.stat == null) {
+        state.stat = dir.statFile(absPath) catch |err| {
+            std.debug.print("Could not stat {s}: {}", .{ state.entry.?.path, err });
+            return c.SQLITE_ERROR;
+        };
+    }
+
     switch (i) {
         0 => {
             const path = state.entry.?.path;
@@ -128,10 +145,25 @@ pub fn vtabColumn(p_cur: [*c]c.sqlite3_vtab_cursor, p_ctx: ?*c.sqlite3_context, 
             sqlite3_api.*.result_text.?(ctx, basename.ptr, @intCast(basename.len), null);
         },
         2 => {
-            // const entry = state.entry.?;
-            // const contents = entry.dir.readFileAlloc(c_allocator, entry.path, std.math.maxInt(usize)) catch return c.SQLITE_ERROR;
+            // LEAKING MEMORY LIKE CRAZY
+            // const contents = entry.dir.readFileAlloc(c_allocator, absPath, std.math.maxInt(usize)) catch |err| {
+            //     std.debug.print("Could not read contents of {s}: {}", .{ absPath, err });
+            //     return c.SQLITE_ERROR;
+            // };
             // sqlite3_api.*.result_text.?(ctx, contents.ptr, @intCast(contents.len), null);
             sqlite3_api.*.result_null.?(ctx);
+        },
+        3 => {
+            sqlite3_api.*.result_int64.?(ctx, @intCast(state.stat.?.size));
+        },
+        4 => {
+            sqlite3_api.*.result_int64.?(ctx, @intCast(@divFloor(state.stat.?.ctime, std.time.ns_per_s)));
+        },
+        5 => {
+            sqlite3_api.*.result_int64.?(ctx, @intCast(@divFloor(state.stat.?.mtime, std.time.ns_per_s)));
+        },
+        6 => {
+            sqlite3_api.*.result_int64.?(ctx, @intCast(@divFloor(state.stat.?.atime, std.time.ns_per_s)));
         },
         else => sqlite3_api.*.result_int64.?(ctx, row_id * row_id),
     }
