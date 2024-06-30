@@ -140,12 +140,10 @@ pub fn vtabRowid(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_pRowid: [*c]c.sqlite_in
     return 0;
 }
 
-pub fn vtabEof(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
-    var cur = arg_cur;
-    _ = &cur;
-    var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(cur)));
-    _ = &pCur;
-    return @intFromBool(pCur.*.row_id >= @as(c.sqlite3_int64, @bitCast(@as(c_longlong, @as(c_int, 10)))));
+pub fn vtabEof(p_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
+    const cur = @as(*Cursor, @ptrCast(@alignCast(p_base)));
+    const state = @as(*CursorState, @ptrCast(@alignCast(cur.iter.?)));
+    return @intFromBool(state.entry == null);
 }
 
 pub fn vtabFilter(arg_pVtabCursor: [*c]c.sqlite3_vtab_cursor, arg_idxNum: c_int, arg_idxStr: [*c]const u8, arg_argc: c_int, arg_argv: [*c]?*c.sqlite3_value) callconv(.C) c_int {
