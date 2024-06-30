@@ -16,7 +16,7 @@ pub const Cursor = extern struct {
     iRowid: c.sqlite3_int64 = @import("std").mem.zeroes(c.sqlite3_int64),
 };
 
-pub fn connect(db: ?*c.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, vtab: [*c][*c]c.sqlite3_vtab, err: [*c][*c]u8) callconv(.C) c_int {
+pub fn vTabConnect(db: ?*c.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, vtab: [*c][*c]c.sqlite3_vtab, err: [*c][*c]u8) callconv(.C) c_int {
     _ = aux;
     _ = argc;
     _ = argv;
@@ -34,7 +34,7 @@ pub fn connect(db: ?*c.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [
     return rc;
 }
 
-pub fn markdown_filesDisconnect(arg_pVtab: [*c]c.sqlite3_vtab) callconv(.C) c_int {
+pub fn vTabDisconnect(arg_pVtab: [*c]c.sqlite3_vtab) callconv(.C) c_int {
     var pVtab = arg_pVtab;
     _ = &pVtab;
     var p: [*c]VTab = @as([*c]VTab, @ptrCast(@alignCast(pVtab)));
@@ -42,7 +42,7 @@ pub fn markdown_filesDisconnect(arg_pVtab: [*c]c.sqlite3_vtab) callconv(.C) c_in
     sqlite3_api.*.free.?(@as(?*anyopaque, @ptrCast(p)));
     return 0;
 }
-pub fn markdown_filesOpen(arg_p: [*c]c.sqlite3_vtab, arg_ppCursor: [*c][*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
+pub fn vTabOpen(arg_p: [*c]c.sqlite3_vtab, arg_ppCursor: [*c][*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     var p = arg_p;
     _ = &p;
     var ppCursor = arg_ppCursor;
@@ -55,7 +55,7 @@ pub fn markdown_filesOpen(arg_p: [*c]c.sqlite3_vtab, arg_ppCursor: [*c][*c]c.sql
     ppCursor.* = &pCur.*.base;
     return 0;
 }
-pub fn markdown_filesClose(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
+pub fn vTabClose(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     var cur = arg_cur;
     _ = &cur;
     var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(cur)));
@@ -63,7 +63,7 @@ pub fn markdown_filesClose(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_in
     sqlite3_api.*.free.?(@as(?*anyopaque, @ptrCast(pCur)));
     return 0;
 }
-pub fn markdown_filesNext(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
+pub fn vTabNext(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     var cur = arg_cur;
     _ = &cur;
     var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(cur)));
@@ -71,7 +71,7 @@ pub fn markdown_filesNext(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int
     pCur.*.iRowid += 1;
     return 0;
 }
-pub fn markdown_filesColumn(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_ctx: ?*c.sqlite3_context, arg_i: c_int) callconv(.C) c_int {
+pub fn vTabColumn(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_ctx: ?*c.sqlite3_context, arg_i: c_int) callconv(.C) c_int {
     var cur = arg_cur;
     _ = &cur;
     var ctx = arg_ctx;
@@ -95,7 +95,7 @@ pub fn markdown_filesColumn(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_ctx: ?*c.sql
     }
     return 0;
 }
-pub fn markdown_filesRowid(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_pRowid: [*c]c.sqlite_int64) callconv(.C) c_int {
+pub fn vTabRowid(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_pRowid: [*c]c.sqlite_int64) callconv(.C) c_int {
     var cur = arg_cur;
     _ = &cur;
     var pRowid = arg_pRowid;
@@ -105,14 +105,14 @@ pub fn markdown_filesRowid(arg_cur: [*c]c.sqlite3_vtab_cursor, arg_pRowid: [*c]c
     pRowid.* = pCur.*.iRowid;
     return 0;
 }
-pub fn markdown_filesEof(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
+pub fn vTabEof(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     var cur = arg_cur;
     _ = &cur;
     var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(cur)));
     _ = &pCur;
     return @intFromBool(pCur.*.iRowid >= @as(c.sqlite3_int64, @bitCast(@as(c_longlong, @as(c_int, 10)))));
 }
-pub fn markdown_filesFilter(arg_pVtabCursor: [*c]c.sqlite3_vtab_cursor, arg_idxNum: c_int, arg_idxStr: [*c]const u8, arg_argc: c_int, arg_argv: [*c]?*c.sqlite3_value) callconv(.C) c_int {
+pub fn vTabFilter(arg_pVtabCursor: [*c]c.sqlite3_vtab_cursor, arg_idxNum: c_int, arg_idxStr: [*c]const u8, arg_argc: c_int, arg_argv: [*c]?*c.sqlite3_value) callconv(.C) c_int {
     var pVtabCursor = arg_pVtabCursor;
     _ = &pVtabCursor;
     var idxNum = arg_idxNum;
@@ -128,7 +128,7 @@ pub fn markdown_filesFilter(arg_pVtabCursor: [*c]c.sqlite3_vtab_cursor, arg_idxN
     pCur.*.iRowid = 1;
     return 0;
 }
-pub fn markdown_filesBestIndex(arg_tab: [*c]c.sqlite3_vtab, arg_pIdxInfo: [*c]c.sqlite3_index_info) callconv(.C) c_int {
+pub fn vTabBestIndex(arg_tab: [*c]c.sqlite3_vtab, arg_pIdxInfo: [*c]c.sqlite3_index_info) callconv(.C) c_int {
     var tab = arg_tab;
     _ = &tab;
     var pIdxInfo = arg_pIdxInfo;
@@ -140,17 +140,17 @@ pub fn markdown_filesBestIndex(arg_tab: [*c]c.sqlite3_vtab, arg_pIdxInfo: [*c]c.
 const MarkdownFilesVTabModule = c.sqlite3_module{
     .iVersion = 0,
     .xCreate = @ptrFromInt(0),
-    .xConnect = connect,
-    .xBestIndex = markdown_filesBestIndex,
-    .xDisconnect = markdown_filesDisconnect,
+    .xConnect = vTabConnect,
+    .xBestIndex = vTabBestIndex,
+    .xDisconnect = vTabDisconnect,
     .xDestroy = @ptrFromInt(0),
-    .xOpen = markdown_filesOpen,
-    .xClose = markdown_filesClose,
-    .xFilter = markdown_filesFilter,
-    .xNext = markdown_filesNext,
-    .xEof = markdown_filesEof,
-    .xColumn = markdown_filesColumn,
-    .xRowid = markdown_filesRowid,
+    .xOpen = vTabOpen,
+    .xClose = vTabClose,
+    .xFilter = vTabFilter,
+    .xNext = vTabNext,
+    .xEof = vTabEof,
+    .xColumn = vTabColumn,
+    .xRowid = vTabRowid,
     .xUpdate = @ptrFromInt(0),
     .xBegin = @ptrFromInt(0),
     .xSync = @ptrFromInt(0),
