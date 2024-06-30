@@ -11,6 +11,11 @@ const c_allocator = std.heap.c_allocator;
 // Corresponding to the macro SQLITE_EXTENSION_INIT1
 var sqlite3_api: [*c]const c.sqlite3_api_routines = undefined;
 
+pub const CursorState: type = struct {
+    walker: std.fs.Dir.Walker,
+    entry: ?std.fs.Dir.Walker.Entry = null,
+};
+
 pub const VTab = extern struct {
     base: c.sqlite3_vtab = std.mem.zeroes(c.sqlite3_vtab),
     root_dir: [*:0]u8,
@@ -19,7 +24,7 @@ pub const VTab = extern struct {
 pub const Cursor = extern struct {
     base: c.sqlite3_vtab_cursor = std.mem.zeroes(c.sqlite3_vtab_cursor),
     row_id: c.sqlite3_int64 = 0,
-    iter: ?*anyopaque = null, // Dir.Walker
+    iter: ?*anyopaque = null, // CursorState
 };
 
 pub fn vtabConnect(db: ?*c.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]c.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
@@ -70,42 +75,32 @@ pub fn vtabDisconnect(p_vtab: [*c]c.sqlite3_vtab) callconv(.C) c_int {
 pub fn vtabOpen(p_vtab: [*c]c.sqlite3_vtab, pp_cursor: [*c][*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     const vtab: *VTab = @as(*VTab, @ptrCast(@alignCast(p_vtab)));
 
-    // TODO: vtabOpen can't return errors?
-    const dir = std.fs.openDirAbsoluteZ(vtab.root_dir, .{ .iterate = true }) catch unreachable;
-    const walker = dir.walk(c_allocator) catch unreachable;
+    const dir = std.fs.openDirAbsoluteZ(vtab.root_dir, .{ .iterate = true }) catch return c.SQLITE_ERROR;
+    const walker = dir.walk(c_allocator) catch return c.SQLITE_ERROR;
     const new_cursor: *Cursor = c_allocator.create(Cursor) catch return c.SQLITE_NOMEM;
 
-    const p_walker = c_allocator.create(@TypeOf(walker)) catch unreachable;
-    p_walker.* = walker;
-    new_cursor.iter = p_walker;
+    var p_state: *CursorState = c_allocator.create(CursorState) catch return c.SQLITE_NOMEM;
+    p_state.*.walker = walker;
+    p_state.*.entry = p_state.walker.next() catch return c.SQLITE_ERROR;
+    new_cursor.iter = p_state;
     pp_cursor.* = &new_cursor.*.base;
     return 0;
 }
 
 pub fn vtabClose(p_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     const cur = @as(*Cursor, @ptrCast(@alignCast(p_base)));
-    const walker = @as(*std.fs.Dir.Walker, @ptrCast(@alignCast(cur.iter.?)));
-
-    //= while (walker.next() catch unreachable) |entry| {
-    //=     switch (entry.kind) {
-    //=         .file => std.debug.print("File: {s}\n", .{entry.path}),
-    //=         .directory => std.debug.print("Directory: {s}\n", .{entry.path}),
-    //=         .sym_link => std.debug.print("Symlink: {s}\n", .{entry.path}),
-    //=         else => std.debug.print("Other: {s}\n", .{entry.path}),
-    //=     }
-    //= }
-
-    c_allocator.destroy(walker);
+    const state = @as(*CursorState, @ptrCast(@alignCast(cur.iter.?)));
+    c_allocator.destroy(state);
     c_allocator.destroy(cur);
     return c.SQLITE_OK;
 }
 
-pub fn vtabNext(arg_cur: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
-    var cur = arg_cur;
-    _ = &cur;
-    var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(cur)));
-    _ = &pCur;
-    pCur.*.row_id += 1;
+pub fn vtabNext(p_cur_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
+    const cursor: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(p_cur_base)));
+    cursor.*.row_id += 1;
+
+    var state = @as(*CursorState, @ptrCast(@alignCast(cursor.*.iter)));
+    state.entry = state.walker.next() catch return c.SQLITE_ERROR;
     return 0;
 }
 
