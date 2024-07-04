@@ -37,7 +37,7 @@ pub fn vtabConnect(db: ?*c.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]con
     }
 
     var new_vtab: *VTab = undefined;
-    const rc: c_int = sqlite3_api.*.declare_vtab.?(db, "CREATE TABLE x(path,basename,contents,size_bytes,ctime_s,mtime_s,atime_s)");
+    const rc: c_int = sqlite3_api.*.declare_vtab.?(db, "CREATE TABLE x(path,basename,size_bytes,ctime_s,mtime_s,atime_s)");
     if (rc != c.SQLITE_OK) {
         return rc;
     }
@@ -74,6 +74,8 @@ pub fn vtabDisconnect(p_vtab: [*c]c.sqlite3_vtab) callconv(.C) c_int {
 }
 
 pub fn vtabOpen(p_vtab: [*c]c.sqlite3_vtab, pp_cursor: [*c][*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
+    std.debug.print("== vtabOpen ==\n", .{});
+
     const vtab: *VTab = @as(*VTab, @ptrCast(@alignCast(p_vtab)));
 
     const dir = std.fs.openDirAbsoluteZ(vtab.root_dir, .{ .iterate = true }) catch return c.SQLITE_ERROR;
@@ -85,7 +87,7 @@ pub fn vtabOpen(p_vtab: [*c]c.sqlite3_vtab, pp_cursor: [*c][*c]c.sqlite3_vtab_cu
     p_state.*.entry = p_state.walker.next() catch return c.SQLITE_ERROR;
     new_cursor.state = p_state;
     pp_cursor.* = &new_cursor.*.base;
-    return 0;
+    return c.SQLITE_OK;
 }
 
 pub fn vtabClose(p_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
@@ -97,9 +99,10 @@ pub fn vtabClose(p_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
 }
 
 pub fn vtabNext(p_cur_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
+    std.debug.print("== vtabNext ==\n", .{});
+
     const cursor: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(p_cur_base)));
     cursor.*.row_id += 1;
-
     var state = @as(*CursorState, @ptrCast(@alignCast(cursor.*.state)));
 
     while (true) {
@@ -114,6 +117,8 @@ pub fn vtabNext(p_cur_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
 }
 
 pub fn vtabColumn(p_cur: [*c]c.sqlite3_vtab_cursor, p_ctx: ?*c.sqlite3_context, i: c_int) callconv(.C) c_int {
+    std.debug.print("== vtabColumn {} ==\n", .{i});
+
     const ctx = p_ctx.?;
     const cur = @as(*Cursor, @ptrCast(@alignCast(p_cur)));
     const state = @as(*CursorState, @ptrCast(@alignCast(cur.state.?)));
@@ -145,27 +150,18 @@ pub fn vtabColumn(p_cur: [*c]c.sqlite3_vtab_cursor, p_ctx: ?*c.sqlite3_context, 
             sqlite3_api.*.result_text.?(ctx, basename.ptr, @intCast(basename.len), null);
         },
         2 => {
-            // LEAKING MEMORY LIKE CRAZY
-            // const contents = entry.dir.readFileAlloc(c_allocator, absPath, std.math.maxInt(usize)) catch |err| {
-            //     std.debug.print("Could not read contents of {s}: {}", .{ absPath, err });
-            //     return c.SQLITE_ERROR;
-            // };
-            // sqlite3_api.*.result_text.?(ctx, contents.ptr, @intCast(contents.len), null);
-            sqlite3_api.*.result_null.?(ctx);
-        },
-        3 => {
             sqlite3_api.*.result_int64.?(ctx, @intCast(state.stat.?.size));
         },
-        4 => {
+        3 => {
             sqlite3_api.*.result_int64.?(ctx, @intCast(@divFloor(state.stat.?.ctime, std.time.ns_per_s)));
         },
-        5 => {
+        4 => {
             sqlite3_api.*.result_int64.?(ctx, @intCast(@divFloor(state.stat.?.mtime, std.time.ns_per_s)));
         },
-        6 => {
+        5 => {
             sqlite3_api.*.result_int64.?(ctx, @intCast(@divFloor(state.stat.?.atime, std.time.ns_per_s)));
         },
-        else => sqlite3_api.*.result_int64.?(ctx, row_id * row_id),
+        else => sqlite3_api.*.result_int64.?(ctx, row_id),
     }
     return c.SQLITE_OK;
 }
@@ -242,6 +238,29 @@ const MarkdownFilesVTabModule = c.sqlite3_module{
     // .xIntegrity = 0,
 };
 
+fn mdfContentsFunc(
+    ctx: ?*c.sqlite3_context,
+    argc: c_int,
+    pp_value: [*c]?*c.sqlite3_value,
+) callconv(.C) void {
+    std.debug.assert(argc == 1);
+    const absPath: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[0])));
+
+    const contents = std.fs.cwd().readFileAlloc(c_allocator, absPath[0..std.mem.len(absPath)], std.math.maxInt(usize)) catch |err| {
+        const msg = std.fmt.allocPrint(c_allocator, "Could not read contents of {s}: {}", .{ absPath, err }) catch {
+            sqlite3_api.*.result_error.?(ctx, "Ran out of memory while trying to report read error!\\x00", -1);
+            return;
+        };
+        sqlite3_api.*.result_error.?(ctx, msg.ptr, @intCast(msg.len));
+        return;
+    };
+    sqlite3_api.*.result_text.?(ctx, contents.ptr, @intCast(contents.len), null);
+}
+
+fn mdfContentsDestroy(ptr: ?*anyopaque) callconv(.C) void {
+    _ = ptr;
+}
+
 export fn sqlite3_markdown_files_init(
     db: *c.sqlite3,
     pzErrMsg: [*c][*c]u8,
@@ -250,9 +269,26 @@ export fn sqlite3_markdown_files_init(
     // Corresponding to the macro SQLITE_EXTENSION_INIT2
     sqlite3_api = pApi;
     _ = pzErrMsg;
-    const rc: c_int = c.sqlite3_initialize();
+    var rc: c_int = c.sqlite3_initialize();
     if (rc != c.SQLITE_OK) {
         return rc;
     }
-    return c.sqlite3_create_module(db, "markdown_files\x00", &MarkdownFilesVTabModule, @ptrFromInt(0));
+    rc = c.sqlite3_create_module(db, "markdown_files\x00", &MarkdownFilesVTabModule, @ptrFromInt(0));
+    if (rc != c.SQLITE_OK) {
+        return rc;
+    }
+
+    rc = c.sqlite3_create_function_v2(
+        db,
+        "mdf_contents",
+        1,
+        c.SQLITE_UTF8 | c.SQLITE_DETERMINISTIC,
+        null,
+        mdfContentsFunc,
+        null,
+        null,
+        mdfContentsDestroy,
+    );
+
+    return rc;
 }
