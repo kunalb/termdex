@@ -140,8 +140,8 @@ pub fn vtabColumn(p_cur: [*c]c.sqlite3_vtab_cursor, p_ctx: ?*c.sqlite3_context, 
 
     switch (i) {
         0 => {
-            const path = state.entry.?.path;
-            // Potential problem: it's not entirely clear if keeping the string till next row is called is fine
+            // Memory leak for generated path
+            const path = c_allocator.dupe(u8, absPath) catch unreachable;
             sqlite3_api.*.result_text.?(ctx, path.ptr, @intCast(path.len), null);
         },
         1 => {
