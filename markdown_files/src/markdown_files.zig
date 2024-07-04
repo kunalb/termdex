@@ -131,7 +131,7 @@ pub fn vtabColumn(p_cur: [*c]c.sqlite3_vtab_cursor, p_ctx: ?*c.sqlite3_context, 
     defer c_allocator.free(absPath);
 
     // Stat columns
-    if (i >= 3 and state.stat == null) {
+    if (i >= 2 and state.stat == null) {
         state.stat = dir.statFile(absPath) catch |err| {
             std.debug.print("Could not stat {s}: {}", .{ state.entry.?.path, err });
             return c.SQLITE_ERROR;
