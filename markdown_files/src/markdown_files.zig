@@ -81,8 +81,11 @@ pub fn vtabOpen(p_vtab: [*c]c.sqlite3_vtab, pp_cursor: [*c][*c]c.sqlite3_vtab_cu
     const new_cursor: *Cursor = c_allocator.create(Cursor) catch return c.SQLITE_NOMEM;
 
     var p_state: *CursorState = c_allocator.create(CursorState) catch return c.SQLITE_NOMEM;
-    p_state.*.walker = walker;
-    p_state.*.entry = p_state.walker.next() catch return c.SQLITE_ERROR;
+    p_state.walker = walker;
+    p_state.entry = p_state.walker.next() catch return c.SQLITE_ERROR;
+    p_state.stat = null;
+
+    std.debug.assert(p_state.*.stat == null);
     new_cursor.state = p_state;
     pp_cursor.* = &new_cursor.*.base;
     return c.SQLITE_OK;
@@ -127,7 +130,11 @@ pub fn vtabColumn(p_cur: [*c]c.sqlite3_vtab_cursor, p_ctx: ?*c.sqlite3_context, 
     // Stat columns
     if (i >= 2 and state.stat == null) {
         state.stat = dir.statFile(absPath) catch |err| {
-            std.debug.print("Could not stat {s}: {}", .{ state.entry.?.path, err });
+            const error_msg = std.fmt.allocPrint(c_allocator, "Could not stat {s}: {}", .{ absPath, err }) catch {
+                return c.SQLITE_NOMEM;
+            };
+            defer c_allocator.free(error_msg);
+            sqlite3_api.*.result_error.?(ctx, error_msg.ptr, @intCast(error_msg.len));
             return c.SQLITE_ERROR;
         };
     }
