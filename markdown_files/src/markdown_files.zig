@@ -74,8 +74,6 @@ pub fn vtabDisconnect(p_vtab: [*c]c.sqlite3_vtab) callconv(.C) c_int {
 }
 
 pub fn vtabOpen(p_vtab: [*c]c.sqlite3_vtab, pp_cursor: [*c][*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
-    std.debug.print("== vtabOpen ==\n", .{});
-
     const vtab: *VTab = @as(*VTab, @ptrCast(@alignCast(p_vtab)));
 
     const dir = std.fs.openDirAbsoluteZ(vtab.root_dir, .{ .iterate = true }) catch return c.SQLITE_ERROR;
@@ -99,8 +97,6 @@ pub fn vtabClose(p_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
 }
 
 pub fn vtabNext(p_cur_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
-    std.debug.print("== vtabNext ==\n", .{});
-
     const cursor: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(p_cur_base)));
     cursor.*.row_id += 1;
     var state = @as(*CursorState, @ptrCast(@alignCast(cursor.*.state)));
@@ -117,8 +113,6 @@ pub fn vtabNext(p_cur_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
 }
 
 pub fn vtabColumn(p_cur: [*c]c.sqlite3_vtab_cursor, p_ctx: ?*c.sqlite3_context, i: c_int) callconv(.C) c_int {
-    std.debug.print("== vtabColumn {} ==\n", .{i});
-
     const ctx = p_ctx.?;
     const cur = @as(*Cursor, @ptrCast(@alignCast(p_cur)));
     const state = @as(*CursorState, @ptrCast(@alignCast(cur.state.?)));
