@@ -251,10 +251,6 @@ fn mdfContentsFunc(
     sqlite3_api.*.result_text.?(ctx, contents.ptr, @intCast(contents.len), null);
 }
 
-fn mdfContentsDestroy(ptr: ?*anyopaque) callconv(.C) void {
-    _ = ptr;
-}
-
 export fn sqlite3_markdown_files_init(
     db: *c.sqlite3,
     pzErrMsg: [*c][*c]u8,
@@ -276,12 +272,12 @@ export fn sqlite3_markdown_files_init(
         db,
         "mdf_contents",
         1,
-        c.SQLITE_UTF8 | c.SQLITE_DETERMINISTIC,
+        c.SQLITE_UTF8,
         null,
         mdfContentsFunc,
         null,
         null,
-        mdfContentsDestroy,
+        null,
     );
 
     return rc;
