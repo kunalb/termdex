@@ -1,9 +1,9 @@
 const std = @import("std");
 
 const c = @cImport({
-    @cInclude("sqlite/sqlite3ext.h");
     @cInclude("string.h");
-    @cInclude("yaml.h");
+    @cInclude("/usr/include/sqlite3ext.h");
+    @cInclude("/usr/include/yaml.h");
 });
 
 // Keep things simple for interop with C, potentially revisit as needed

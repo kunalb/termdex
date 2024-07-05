@@ -24,11 +24,13 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
 
-    lib.addIncludePath(b.path("src"));
-    lib.addIncludePath(b.path("."));
-    lib.addObjectFile(b.path("sqlite/libsqlite3.so"));
-    // lib.linkSystemLibrary("sqlite3");
+    // lib.addIncludePath(b.path("src"));
+    // lib.addIncludePath(b.path("."));
+    // lib.addObjectFile(b.path("sqlite/libsqlite3.so"));
+
+    lib.linkSystemLibrary("sqlite3");
     lib.linkSystemLibrary("yaml");
+    // lib.addIncludePath(b.path("/usr/include"));
 
     // This declares intent for the library to be installed into the standard
     // location when the user invokes the "install" step (the default step when
