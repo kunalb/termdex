@@ -22,10 +22,13 @@ jobs:
         with:
           version: master
 
-      - name: Install libyaml
+      - name: Install libyaml & SQLite
         run: |
           sudo apt-get update
-          sudo apt-get install -y libyaml-dev
+          sudo apt-get install -y libyaml-dev libsqlite3-dev
+
+      - name: Switch to build dir
+        run: cd markdown_files
 
       - name: Build SQLite extension
         run: |
@@ -37,4 +40,4 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: sqlite-extension-${{ matrix.arch }}
-          path: zig-out/lib/libsqlite_extension.
+          path: zig-out/lib/libmarkdown_files.so
