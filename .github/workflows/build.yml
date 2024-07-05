@@ -30,9 +30,7 @@ jobs:
       - name: Build SQLite extension
         working-directory: ./markdown_files
         run: |
-          zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.arch }}-linux-gnu
-        env:
-          CC: zig cc -target ${{ matrix.arch }}-linux-gnu
+          zig build -Doptimize=ReleaseFast
 
       - name: Upload artifact
         uses: actions/upload-artifact@v2
