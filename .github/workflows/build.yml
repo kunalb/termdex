@@ -36,7 +36,6 @@ jobs:
 
       - name: Upload artifact
         uses: actions/upload-artifact@v2
-        working-directory: ./markdown_files
         with:
           name: sqlite-extension-${{ matrix.arch }}
-          path: zig-out/lib/libmarkdown_files.so
+          path: markdown_files/zig-out/lib/libmarkdown_files.so
