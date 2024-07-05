@@ -402,8 +402,6 @@ fn frontMatter(
         } else if (event.type == c.YAML_STREAM_END_EVENT) {
             break;
         }
-
-        std.debug.print("{?}\n", .{event});
     }
 
     const result = try result_pieces.toOwnedSlice();
