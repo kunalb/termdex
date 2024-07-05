@@ -252,60 +252,172 @@ fn mdfContentsFunc(
     sqlite3_api.*.result_text.?(ctx, contents.ptr, @intCast(contents.len), null);
 }
 
-fn mdfFrontMatterFunc(
-    ctx: ?*c.sqlite3_context,
-    argc: c_int,
-    pp_value: [*c]?*c.sqlite3_value,
-) callconv(.C) void {
-    _ = argc;
-
+fn mdfFrontMatterFunc(ctx: ?*c.sqlite3_context, argc: c_int, pp_value: [*c]?*c.sqlite3_value) callconv(.C) void {
+    std.debug.assert(argc == 2);
     const abs_path: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[0])));
-    const tag: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[1])));
-    const tag_len = std.mem.len(tag);
+    const field: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[1])));
 
-    var parser: c.yaml_parser_t = undefined;
-    const event: c.yaml_event_t = undefined;
-
-    _ = event;
-
-    const result = c.yaml_parser_initialize(&parser);
-    if (result != 1) {
-        sqlite3_api.*.result_error.?(ctx, "Couldn't initialize yaml parser\x00", -1);
-    }
-    defer c.yaml_parser_delete(&parser);
-
-    const file = std.fs.cwd().openFile(abs_path[0..std.mem.len(abs_path)], .{}) catch |err| {
-        const msg = std.fmt.allocPrint(c_allocator, "Could not read the contents of {s}: {}", .{ abs_path, err }) catch {
-            sqlite3_api.*.result_error.?(ctx, "Ran out of memory while trying to report read error!\\x00", -1);
+    const val = frontMatter(std.mem.span(abs_path), std.mem.span(field)) catch |err| {
+        const err_msg = std.fmt.allocPrint(c_allocator, "{?}", .{err}) catch {
+            sqlite3_api.*.result_error.?(ctx, "Ran out of memory while trying to report error!", -1);
             return;
         };
-        sqlite3_api.*.result_error.?(ctx, msg.ptr, @intCast(msg.len));
+
+        defer c_allocator.free(err_msg);
+        sqlite3_api.*.result_error.?(ctx, err_msg.ptr, @intCast(err_msg.len));
         return;
     };
+
+    if (val == null) {
+        sqlite3_api.*.result_null.?(ctx);
+    } else {
+        sqlite3_api.*.result_text.?(ctx, val.?.ptr, @intCast(val.?.len), null);
+    }
+}
+
+const FrontMatterError = error{
+    YAMLParserInitFailed,
+    YAMLParserError,
+};
+
+fn frontMatter(
+    abs_path: []const u8,
+    field: []const u8,
+) !?[]u8 {
+    const file = try std.fs.cwd().openFile(abs_path, .{});
     defer file.close();
 
     var buf_reader = std.io.bufferedReader(file.reader());
     var in_stream = buf_reader.reader();
     var buf: [4096]u8 = undefined;
+    var raw_yaml = std.ArrayList(u8).init(c_allocator);
+    defer raw_yaml.deinit();
 
     var first = true;
-
-    while (in_stream.readUntilDelimiterOrEof(&buf, '\n') catch return) |line| {
+    while (try in_stream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
         if (first and !std.mem.eql(u8, line[0..3], "---")) {
             break;
         } else if (!first and std.mem.eql(u8, line[0..3], "---")) {
             break;
-        } else if (!first and std.mem.eql(u8, line[0..tag_len], tag[0..tag_len])) {
-            const val = line[(tag_len + 2)..];
-            sqlite3_api.*.result_text.?(ctx, val.ptr, @intCast(val.len), null);
-            return;
+        } else if (!first) {
+            try raw_yaml.appendSlice(line);
+            try raw_yaml.append('\n');
         }
 
         first = false;
     }
 
-    sqlite3_api.*.result_null.?(ctx);
+    const raw_yaml_contiguous = try raw_yaml.toOwnedSliceSentinel(0);
+    defer c_allocator.free(raw_yaml_contiguous);
+
+    var event: c.yaml_event_t = undefined;
+    var parser: c.yaml_parser_t = undefined;
+    if (c.yaml_parser_initialize(&parser) != 1) {
+        return FrontMatterError.YAMLParserInitFailed;
+    }
+    defer c.yaml_parser_delete(&parser);
+    c.yaml_parser_set_input_string(&parser, raw_yaml_contiguous.ptr, raw_yaml_contiguous.len);
+
+    var return_next_token = false;
+    while (true) {
+        if (c.yaml_parser_parse(&parser, &event) != 1) {
+            return FrontMatterError.YAMLParserError;
+        }
+        defer c.yaml_event_delete(&event);
+
+        switch (event.type) {
+            c.YAML_STREAM_END_EVENT => break,
+            c.YAML_SCALAR_EVENT => {
+                const key = event.data.scalar.value;
+                if (std.mem.eql(u8, std.mem.span(key), field)) {
+                    return_next_token = true;
+                    break;
+                }
+            },
+            else => {},
+        }
+    }
+
+    if (!return_next_token) {
+        return null;
+    }
+
+    var result_pieces = std.ArrayList(u8).init(c_allocator);
+    defer result_pieces.deinit();
+
+    var state_stack = std.ArrayList(FrontMatterState).init(c_allocator);
+    defer state_stack.deinit();
+
+    try state_stack.append(FrontMatterState.Start);
+
+    while (state_stack.items.len > 0) {
+        if (c.yaml_parser_parse(&parser, &event) != 1) {
+            return FrontMatterError.YAMLParserError;
+        }
+        defer c.yaml_event_delete(&event);
+
+        const popped = state_stack.pop();
+
+        if (event.type == c.YAML_SEQUENCE_START_EVENT) {
+            try state_stack.append(FrontMatterState.SequenceStart);
+            try result_pieces.appendSlice("[ ");
+        } else if (event.type == c.YAML_SEQUENCE_END_EVENT) {
+            try result_pieces.appendSlice(" ]");
+        } else if (event.type == c.YAML_MAPPING_START_EVENT) {
+            try state_stack.append(FrontMatterState.MappingStart);
+            try result_pieces.appendSlice("{ ");
+        } else if (event.type == c.YAML_MAPPING_END_EVENT) {
+            try result_pieces.appendSlice(" }");
+        } else if (event.type == c.YAML_SCALAR_EVENT) {
+            const val = std.mem.span(event.data.scalar.value);
+
+            switch (popped) {
+                FrontMatterState.Start => {
+                    try result_pieces.appendSlice(val);
+                },
+                FrontMatterState.SequenceStart => {
+                    try state_stack.append(FrontMatterState.SequenceInside);
+                    try result_pieces.appendSlice(val);
+                },
+                FrontMatterState.SequenceInside => {
+                    try state_stack.append(FrontMatterState.SequenceInside);
+                    try result_pieces.appendSlice(", ");
+                    try result_pieces.appendSlice(val);
+                },
+                FrontMatterState.MappingStart => {
+                    try result_pieces.appendSlice(val);
+                    try state_stack.append(FrontMatterState.MappingVal);
+                },
+                FrontMatterState.MappingKey => {
+                    try result_pieces.appendSlice(", ");
+                    try result_pieces.appendSlice(val);
+                    try state_stack.append(FrontMatterState.MappingVal);
+                },
+                FrontMatterState.MappingVal => {
+                    try result_pieces.appendSlice(": ");
+                    try result_pieces.appendSlice(val);
+                    try state_stack.append(FrontMatterState.MappingKey);
+                },
+            }
+        } else if (event.type == c.YAML_STREAM_END_EVENT) {
+            break;
+        }
+
+        std.debug.print("{?}\n", .{event});
+    }
+
+    const result = try result_pieces.toOwnedSlice();
+    return result;
 }
+
+const FrontMatterState = enum {
+    Start,
+    SequenceStart,
+    SequenceInside,
+    MappingStart,
+    MappingKey,
+    MappingVal,
+};
 
 export fn sqlite3_markdown_files_init(
     db: *c.sqlite3,
@@ -339,7 +451,5 @@ export fn sqlite3_markdown_files_init(
         return rc;
     }
 
-    rc = c.sqlite3_create_function_v2(db, "mdf_front_matter", 2, c.SQLITE_UTF8, null, mdfFrontMatterFunc, null, null, null);
-
-    return rc;
+    return c.sqlite3_create_function_v2(db, "mdf_front_matter", 2, c.SQLITE_UTF8, null, mdfFrontMatterFunc, null, null, null);
 }
