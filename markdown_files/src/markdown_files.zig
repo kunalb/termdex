@@ -3,6 +3,7 @@ const std = @import("std");
 const c = @cImport({
     @cInclude("sqlite/sqlite3ext.h");
     @cInclude("string.h");
+    @cInclude("yaml.h");
 });
 
 // Keep things simple for interop with C, potentially revisit as needed
@@ -184,20 +185,13 @@ pub fn vtabEof(p_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     return @intFromBool(state.entry == null);
 }
 
-pub fn vtabFilter(arg_pVtabCursor: [*c]c.sqlite3_vtab_cursor, arg_idxNum: c_int, arg_idxStr: [*c]const u8, arg_argc: c_int, arg_argv: [*c]?*c.sqlite3_value) callconv(.C) c_int {
-    var pVtabCursor = arg_pVtabCursor;
-    _ = &pVtabCursor;
-    var idxNum = arg_idxNum;
-    _ = &idxNum;
-    var idxStr = arg_idxStr;
-    _ = &idxStr;
-    var argc = arg_argc;
-    _ = &argc;
-    var argv = arg_argv;
-    _ = &argv;
-    var pCur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(pVtabCursor)));
-    _ = &pCur;
-    pCur.*.row_id = 1;
+pub fn vtabFilter(p_vtab_cursor: [*c]c.sqlite3_vtab_cursor, idx_num: c_int, idx_str: [*c]const u8, argc: c_int, argv: [*c]?*c.sqlite3_value) callconv(.C) c_int {
+    _ = idx_num;
+    _ = idx_str;
+    _ = argc;
+    _ = argv;
+    const cur: [*c]Cursor = @as([*c]Cursor, @ptrCast(@alignCast(p_vtab_cursor)));
+    cur.*.row_id = 1;
     return 0;
 }
 
@@ -258,6 +252,61 @@ fn mdfContentsFunc(
     sqlite3_api.*.result_text.?(ctx, contents.ptr, @intCast(contents.len), null);
 }
 
+fn mdfFrontMatterFunc(
+    ctx: ?*c.sqlite3_context,
+    argc: c_int,
+    pp_value: [*c]?*c.sqlite3_value,
+) callconv(.C) void {
+    _ = argc;
+
+    const abs_path: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[0])));
+    const tag: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[1])));
+    const tag_len = std.mem.len(tag);
+
+    var parser: c.yaml_parser_t = undefined;
+    const event: c.yaml_event_t = undefined;
+
+    _ = event;
+
+    const result = c.yaml_parser_initialize(&parser);
+    if (result != 1) {
+        sqlite3_api.*.result_error.?(ctx, "Couldn't initialize yaml parser\x00", -1);
+    }
+    defer c.yaml_parser_delete(&parser);
+
+    const file = std.fs.cwd().openFile(abs_path[0..std.mem.len(abs_path)], .{}) catch |err| {
+        const msg = std.fmt.allocPrint(c_allocator, "Could not read the contents of {s}: {}", .{ abs_path, err }) catch {
+            sqlite3_api.*.result_error.?(ctx, "Ran out of memory while trying to report read error!\\x00", -1);
+            return;
+        };
+        sqlite3_api.*.result_error.?(ctx, msg.ptr, @intCast(msg.len));
+        return;
+    };
+    defer file.close();
+
+    var buf_reader = std.io.bufferedReader(file.reader());
+    var in_stream = buf_reader.reader();
+    var buf: [4096]u8 = undefined;
+
+    var first = true;
+
+    while (in_stream.readUntilDelimiterOrEof(&buf, '\n') catch return) |line| {
+        if (first and !std.mem.eql(u8, line[0..3], "---")) {
+            break;
+        } else if (!first and std.mem.eql(u8, line[0..3], "---")) {
+            break;
+        } else if (!first and std.mem.eql(u8, line[0..tag_len], tag[0..tag_len])) {
+            const val = line[(tag_len + 2)..];
+            sqlite3_api.*.result_text.?(ctx, val.ptr, @intCast(val.len), null);
+            return;
+        }
+
+        first = false;
+    }
+
+    sqlite3_api.*.result_null.?(ctx);
+}
+
 export fn sqlite3_markdown_files_init(
     db: *c.sqlite3,
     pzErrMsg: [*c][*c]u8,
@@ -286,6 +335,11 @@ export fn sqlite3_markdown_files_init(
         null,
         null,
     );
+    if (rc != c.SQLITE_OK) {
+        return rc;
+    }
+
+    rc = c.sqlite3_create_function_v2(db, "mdf_front_matter", 2, c.SQLITE_UTF8, null, mdfFrontMatterFunc, null, null, null);
 
     return rc;
 }
