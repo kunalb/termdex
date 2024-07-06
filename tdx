@@ -1,0 +1,169 @@
+#!/bin/bash -eu
+#
+# Notes: Things to implement
+#
+# - [ ] Use fzf, bat to render and preview documents
+#       Sanity check they're installed as well
+# - [ ] Query implementation
+# - [x] New implementation: include templates
+# - [ ] Edit implementation: show related files
+# - [ ] Grouped rendering for a CLI focalboard based on queries
+# - [ ] Pomodoro implementation
+# - [ ] Publish implementation
+# - [ ] Utility language to expand time
+
+if [[ -n "${TDX_DEBUG:-}" ]]; then
+    set -x
+fi
+
+########################################################################
+# Constants
+########################################################################
+CUR_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+readonly CUR_DIR
+readonly TDX_MDF="${TDX_MDF:-"$CUR_DIR/markdown_files/zig-out/lib/libmarkdown_files.so"}"
+
+
+########################################################################
+# Utilities
+########################################################################
+function err {
+    echo -e "\033[91m $* \033[0m" >&2
+}
+
+function check_dep {
+    if ! command -v "$1" &> /dev/null; then
+	err "Couldn't find $1 in \$PATH: please make sure it's installed!"
+	exit 1
+    fi
+}
+
+function check_lib {
+    if [[ ! -f "$1" ]]; then
+	err "Couldn't find $1: please make sure it's available!"
+	exit 1
+    fi
+}
+
+
+########################################################################
+# Implementation
+########################################################################
+
+function print_usage {
+    echo "$(basename "${BASH_SOURCE[0]}") usage:"
+    echo "  n, new"
+    echo "  e, edit"
+    echo "  q, query"
+
+    exit 1
+}
+
+function new {
+    local template="${1:-}"
+    shift
+
+    local path
+    path="$(date +%Y/%m/%d)"
+
+    local filename
+    filename="$(date +%s).md"
+
+    mkdir -p "$path"
+    local fullpath="$path/$filename"
+
+    case "$template" in
+	n|note)
+	    cat <<EOF >"$fullpath"
+---
+title: ${1:-}
+tags: []
+what: note
+publish: true
+---
+
+EOF
+	    ;;
+	t|task)
+	    cat <<EOF >"$fullpath"
+---
+title: ${1:-}
+tags: []
+what: task
+when: someday    # today, tomorrow, week, month, quarter, someday
+status: *        # blocked, active, done
+deadline:
+---
+
+EOF
+	    ;;
+	b|bookmark)
+	    cat <<EOF >"$fullpath"
+---
+title: ${1:-}
+url: ${2:-}
+tags: []
+what: bookmark
+source:
+publish: true
+---
+
+EOF
+	    ;;
+	r|reminder)
+	    cat <<EOF >"$fullpath"
+---
+title: ${1:-}
+when: ${2:-}
+what: reminder
+---
+
+EOF
+	    ;;
+	*)
+	    cat <<EOF >"$fullpath"
+---
+title:
+tags: []
+what: $template
+---
+
+EOF
+    esac
+    "$EDITOR" "$fullpath"
+
+    if  [[ ! -s "$fullpath" ]]; then
+	rm "$fullpath"
+    fi
+}
+
+function main {
+    check_dep fzf
+    check_dep sqlite3
+    check_dep bat
+    check_lib "$TDX_MDF"
+
+    if (( $# < 1 )); then
+	print_usage
+    fi
+
+    local basecmd="${1:-}"
+    shift
+
+    case "$basecmd" in
+	n|new)
+	    new "$@"
+	    ;;
+	e|edit)
+	    echo "edit"
+	    ;;
+	q|query)
+	    echo "query"
+	    ;;
+	*)
+	    print_usage
+    esac
+}
+
+
+main "$@"
