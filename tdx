@@ -318,7 +318,7 @@ function sql {
 }
 
 function board {
-    local group_by="$1"
+    local group_by="${1:-when}"
     local query
     query=$(cat <<EOF
 SELECT
@@ -331,24 +331,26 @@ WHERE
     mdf_front_matter(path, 'status') != 'done'
     OR mdf_front_matter(path, 'status') IS NULL
   )
+  ${2:+AND $2}
 GROUP BY 1
 ORDER BY COUNT(1) DESC
 EOF
 )
+    local vals
     vals="$("$SELF" sql "-list" "$query")"
 
     for val in $vals; do
-	echo -e "=== ${val}\033 ==="
-	"$SELF" sql "-list" ".separator ' '" "SELECT path, mdf_front_matter(path, 'title'), mdf_front_matter(path, 'collection'), mdf_front_matter(path, 'tags') FROM markdown_files WHERE mdf_front_matter(path, '$group_by') = '$val' AND basename LIKE '%.md' AND path NOT LIKE '%.git%' ORDER BY mtime_s DESC"
+	echo -e "=== ${val} ==="
+	    "$SELF" sql "-list" ".separator ' '" "SELECT path, mdf_front_matter(path, 'title'), mdf_front_matter(path, 'collection'), mdf_front_matter(path, 'tags') FROM markdown_files WHERE mdf_front_matter(path, '$group_by') = '$val' AND basename LIKE '%.md' AND path NOT LIKE '%.git%' ${2:+AND $2} ORDER BY mtime_s DESC"
 	echo
     done |\
 	fzf --header "TERMinal inDEX    [$(pwd)]    [$(date +%F)]" \
-	--header-first \
-	--preview 'file=$(echo {1}); bat --theme=zenburn --color=always --style=plain "$file"' \
-	--preview-window 'right:border-sharp:wrap' \
-	--layout reverse \
-	--bind 'enter:execute(eval "$SELF e {1}")' \
-	--info inline-right
+	    --header-first \
+	    --preview 'file=$(echo {1}); bat --theme=zenburn --color=always --style=plain "$file"' \
+	    --preview-window 'bottom:border-sharp:wrap' \
+	    --layout reverse \
+	    --bind 'enter:execute(eval "$SELF e {1}")+become(eval "$SELF b $group_by")' \
+	    --info inline-right
 }
 
 function main {
