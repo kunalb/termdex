@@ -2,9 +2,9 @@
 #
 # Notes: Things to implement
 #
-# - [ ] Use fzf, bat to render and preview documents
+# - [x] Use fzf, bat to render and preview documents
 #       Sanity check they're installed as well
-# - [ ] Query implementation
+# - [x] Query implementation
 # - [x] New implementation: include templates
 # - [ ] Edit implementation: show related files
 # - [ ] Grouped rendering for a CLI focalboard based on queries
@@ -22,6 +22,7 @@ fi
 CUR_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 readonly CUR_DIR
 readonly TDX_MDF="${TDX_MDF:-"$CUR_DIR/markdown_files/zig-out/lib/libmarkdown_files.so"}"
+readonly ARGS="$@"
 
 
 ########################################################################
@@ -52,9 +53,9 @@ function check_lib {
 
 function print_usage {
     echo "$(basename "${BASH_SOURCE[0]}") usage:"
-    echo "  n, new"
+    echo "  n, new [template=note,task,bookmark,reminder,*]"
     echo "  e, edit"
-    echo "  q, query"
+    echo "  q, query [where clause]"
 
     exit 1
 }
@@ -77,6 +78,7 @@ function new {
 	    cat <<EOF >"$fullpath"
 ---
 title: ${1:-}
+collection: ${2:-}
 tags: []
 what: note
 publish: true
@@ -88,6 +90,7 @@ EOF
 	    cat <<EOF >"$fullpath"
 ---
 title: ${1:-}
+collection: ${2:-}
 tags: []
 what: task
 when: someday    # today, tomorrow, week, month, quarter, someday
@@ -102,6 +105,7 @@ EOF
 ---
 title: ${1:-}
 url: ${2:-}
+collection: ${3:-}
 tags: []
 what: bookmark
 source:
@@ -115,6 +119,7 @@ EOF
 ---
 title: ${1:-}
 when: ${2:-}
+collection: ${3:-}
 what: reminder
 ---
 
@@ -123,7 +128,8 @@ EOF
 	*)
 	    cat <<EOF >"$fullpath"
 ---
-title:
+title: ${1:-}
+collection: ${2:-}
 tags: []
 what: $template
 ---
@@ -135,6 +141,58 @@ EOF
     if  [[ ! -s "$fullpath" ]]; then
 	rm "$fullpath"
     fi
+}
+
+function query {
+    local location=$(pwd);
+
+    local sql_query=$(cat <<EOF
+SELECT
+  substr(path, length('$location') + 2),
+  ' / ',
+  mdf_front_matter(path, 'title'),
+  ' ',
+  mdf_front_matter(path, 'collection'),
+  ' ',
+  mdf_front_matter(path, 'what'),
+  ' ',
+  mdf_front_matter(path, 'tags')
+FROM
+  markdown_files
+WHERE
+  path LIKE '%.md'
+  AND path NOT LIKE '%.git'
+  ${1:+AND $1}
+ORDER BY
+  path ASC,
+  mtime_s DESC
+EOF
+	  );
+
+    command=$(cat <<EOF
+/usr/bin/env \
+  sqlite3 -list -separator "" :memory: \
+  ".load $TDX_MDF sqlite3_markdown_files_init" \
+  "$sql_query"
+EOF
+			  );
+
+    (
+	export FZF_DEFAULT_COMMAND="$command";
+	fzf --header "TERMinal inDEX    [$(pwd)]    [$(date +%F)]" \
+	--header-first \
+	--preview 'file=$(echo {1}); bat --theme=zenburn --color=always --style=plain "$file"' \
+	--preview-window 'up:border-sharp:wrap' \
+	--bind 'ctrl-r:reload(eval "$FZF_DEFAULT_COMMAND")' \
+	--bind 'ctrl-e:become(echo {1})' \
+	--bind 'enter:execute("$EDITOR" {1})+reload(eval "$FZF_DEFAULT_COMMAND")' \
+	--info inline-right
+    )
+
+}
+
+function edit {
+    echo "hi"
 }
 
 function main {
@@ -155,10 +213,10 @@ function main {
 	    new "$@"
 	    ;;
 	e|edit)
-	    echo "edit"
+	    edit "$@"
 	    ;;
 	q|query)
-	    echo "query"
+	    query "$@"
 	    ;;
 	*)
 	    print_usage
