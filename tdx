@@ -57,7 +57,9 @@ function print_usage {
     echo "  e, edit <path>"
     echo "  q, query [where clause]"
     echo "  j, journal"
-
+    echo "  p, pomodoro"
+    echo "  s, sql"
+    echo "  b, board [group by]"
     exit 1
 }
 
@@ -179,8 +181,8 @@ WHERE
   AND path NOT LIKE '%.git'
   ${1:+AND $1}
 ORDER BY
-  path ASC,
-  mtime_s DESC
+  mtime_s DESC,
+  path ASC
 EOF
 	  );
 
@@ -201,7 +203,7 @@ EOF
 	--layout reverse \
 	--bind 'ctrl-r:reload(eval "$FZF_DEFAULT_COMMAND")' \
 	--bind 'enter:execute(eval "$SELF e {1}")+reload(eval "$FZF_DEFAULT_COMMAND")' \
-	--bind 'ctrl-n:become(eval "$SELF n")' \
+	--bind 'ctrl-n:execute(eval "$SELF n")' \
 	--info inline-right
     )
 
@@ -237,10 +239,24 @@ EOF
     local related
     related="$(mktemp "related-$(echo "$collection" | tr '/' '_')-XXX.md")"
 
-    "$SELF" sql \
-	    "-list" \
-	    '.separator \n' \
-	    "SELECT '=== '||path||' ===', mdf_contents(path) AS file FROM markdown_files WHERE basename LIKE '%.md' AND path NOT LIKE '%.git%' AND mdf_front_matter(path, 'collection') = '$collection';" \
+    local query
+    query="$(cat <<EOF
+SELECT
+  '=== '||path||' ===',
+  mdf_contents(path) AS file
+FROM
+  markdown_files
+WHERE
+  basename LIKE '%.md'
+  AND path NOT LIKE '%.git%'
+  AND mdf_front_matter(path, 'collection') = '$collection'
+ORDER BY
+  mtime_s DESC,
+  path ASC;
+EOF
+)"
+
+    "$SELF" sql "-list" '.separator \n' "$query" \
 	    | tr -d '\r' > "$related";
     chmod -w "$related"
 
@@ -301,6 +317,40 @@ function sql {
     exec /usr/bin/env sqlite3 :memory: -cmd ".load $TDX_MDF sqlite3_markdown_files_init" "$@"
 }
 
+function board {
+    local group_by="$1"
+    local query
+    query=$(cat <<EOF
+SELECT
+  DISTINCT(coalesce(mdf_front_matter(path, '$group_by'), 'null'))
+FROM
+  markdown_files
+WHERE
+  mdf_front_matter(path, '$group_by') is not null
+  AND (
+    mdf_front_matter(path, 'status') != 'done'
+    OR mdf_front_matter(path, 'status') IS NULL
+  )
+GROUP BY 1
+ORDER BY COUNT(1) DESC
+EOF
+)
+    vals="$("$SELF" sql "-list" "$query")"
+
+    for val in $vals; do
+	echo -e "=== ${val}\033 ==="
+	"$SELF" sql "-list" ".separator ' '" "SELECT path, mdf_front_matter(path, 'title'), mdf_front_matter(path, 'collection'), mdf_front_matter(path, 'tags') FROM markdown_files WHERE mdf_front_matter(path, '$group_by') = '$val' AND basename LIKE '%.md' AND path NOT LIKE '%.git%' ORDER BY mtime_s DESC"
+	echo
+    done |\
+	fzf --header "TERMinal inDEX    [$(pwd)]    [$(date +%F)]" \
+	--header-first \
+	--preview 'file=$(echo {1}); bat --theme=zenburn --color=always --style=plain "$file"' \
+	--preview-window 'right:border-sharp:wrap' \
+	--layout reverse \
+	--bind 'enter:execute(eval "$SELF e {1}")' \
+	--info inline-right
+}
+
 function main {
     check_dep fzf
     check_dep sqlite3
@@ -332,6 +382,9 @@ function main {
 	    ;;
 	s|sql)
 	    sql "$@"
+	    ;;
+	b|board)
+	    board "$@"
 	    ;;
 	*)
 	    print_usage
