@@ -6,9 +6,9 @@
 #       Sanity check they're installed as well
 # - [x] Query implementation
 # - [x] New implementation: include templates
-# - [ ] Edit implementation: show related files
+# - [x] Edit implementation: show related files
 # - [ ] Grouped rendering for a CLI focalboard based on queries
-# - [ ] Pomodoro implementation
+# - [x] Pomodoro implementation
 # - [ ] Publish implementation
 # - [ ] Utility language to expand time
 
@@ -22,7 +22,7 @@ fi
 CUR_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 readonly CUR_DIR
 readonly TDX_MDF="${TDX_MDF:-"$CUR_DIR/markdown_files/zig-out/lib/libmarkdown_files.so"}"
-readonly ARGS="$@"
+export SELF="$0"
 
 
 ########################################################################
@@ -53,16 +53,19 @@ function check_lib {
 
 function print_usage {
     echo "$(basename "${BASH_SOURCE[0]}") usage:"
-    echo "  n, new [template=note,task,bookmark,reminder,*]"
-    echo "  e, edit"
+    echo "  n, new [template=note,task,bookmark,reminder,pomodoro,*]"
+    echo "  e, edit <path>"
     echo "  q, query [where clause]"
+    echo "  j, journal"
 
     exit 1
 }
 
 function new {
     local template="${1:-}"
-    shift
+    if [[ -n "$template" ]]; then
+	shift
+    fi
 
     local path
     path="$(date +%Y/%m/%d)"
@@ -71,11 +74,11 @@ function new {
     filename="$(date +%s).md"
 
     mkdir -p "$path"
-    local fullpath="$path/$filename"
+    local full_path="$path/$filename"
 
     case "$template" in
 	n|note)
-	    cat <<EOF >"$fullpath"
+	    cat <<EOF >"$full_path"
 ---
 title: ${1:-}
 collection: ${2:-}
@@ -87,7 +90,7 @@ publish: true
 EOF
 	    ;;
 	t|task)
-	    cat <<EOF >"$fullpath"
+	    cat <<EOF >"$full_path"
 ---
 title: ${1:-}
 collection: ${2:-}
@@ -101,7 +104,7 @@ deadline:
 EOF
 	    ;;
 	b|bookmark)
-	    cat <<EOF >"$fullpath"
+	    cat <<EOF >"$full_path"
 ---
 title: ${1:-}
 url: ${2:-}
@@ -115,7 +118,7 @@ publish: true
 EOF
 	    ;;
 	r|reminder)
-	    cat <<EOF >"$fullpath"
+	    cat <<EOF >"$full_path"
 ---
 title: ${1:-}
 when: ${2:-}
@@ -125,8 +128,18 @@ what: reminder
 
 EOF
 	    ;;
+	p|pomo|pomodoro)
+	    cat <<EOF >"$full_path"
+---
+title: ${1:-}
+collection: ${2:-}
+what: pomodoro
+---
+
+EOF
+	    ;;
 	*)
-	    cat <<EOF >"$fullpath"
+	    cat <<EOF >"$full_path"
 ---
 title: ${1:-}
 collection: ${2:-}
@@ -136,17 +149,19 @@ what: $template
 
 EOF
     esac
-    "$EDITOR" "$fullpath"
+    "$EDITOR" "$full_path"
 
-    if  [[ ! -s "$fullpath" ]]; then
-	rm "$fullpath"
+    if  [[ ! -s "$full_path" ]]; then
+	rm "$full_path"
     fi
 }
 
 function query {
-    local location=$(pwd);
+    local location
+    location=$(pwd)
 
-    local sql_query=$(cat <<EOF
+    local sql_query
+    sql_query=$(cat <<EOF
 SELECT
   substr(path, length('$location') + 2),
   ' / ',
@@ -182,17 +197,108 @@ EOF
 	fzf --header "TERMinal inDEX    [$(pwd)]    [$(date +%F)]" \
 	--header-first \
 	--preview 'file=$(echo {1}); bat --theme=zenburn --color=always --style=plain "$file"' \
-	--preview-window 'up:border-sharp:wrap' \
+	--preview-window 'right:border-sharp:wrap' \
+	--layout reverse \
 	--bind 'ctrl-r:reload(eval "$FZF_DEFAULT_COMMAND")' \
-	--bind 'ctrl-e:become(echo {1})' \
-	--bind 'enter:execute("$EDITOR" {1})+reload(eval "$FZF_DEFAULT_COMMAND")' \
+	--bind 'enter:execute(eval "$SELF e {1}")+reload(eval "$FZF_DEFAULT_COMMAND")' \
+	--bind 'ctrl-n:become(eval "$SELF n")' \
 	--info inline-right
     )
 
 }
 
 function edit {
-    echo "hi"
+    local path="$1"
+
+    local parent_dir
+    parent_dir="$(dirname "$path")"
+    mkdir -p "$parent_dir"
+
+    local final_path
+
+    if [[ "$path" == *".md" ]]; then
+	final_path="$path"
+    else
+	final_path="${path}.md"
+    fi
+
+    if [[ ! -f "$final_path" ]]; then
+	cat <<EOF >"$final_path"
+---
+title:
+---
+EOF
+    fi
+
+    local rel_path
+    rel_path="$(realpath -s --relative-to="$(pwd)" "$final_path")"
+    local collection="${rel_path%.md}"
+
+    local related
+    related="$(mktemp "related-$(echo "$collection" | tr '/' '_')-XXX.md")"
+
+    "$SELF" sql \
+	    "-list" \
+	    '.separator \n' \
+	    "SELECT '=== '||path||' ===', mdf_contents(path) AS file FROM markdown_files WHERE basename LIKE '%.md' AND path NOT LIKE '%.git%' AND mdf_front_matter(path, 'collection') = '$collection';" \
+	    | tr -d '\r' > "$related";
+    chmod -w "$related"
+
+    if [[ ! -s "$related" ]]; then
+	rm -f "$related"
+	"$EDITOR" "$final_path"
+    else
+	"$EDITOR" "$final_path" "$related"
+    fi
+
+    if [[ ! -s "$final_path" ]]; then
+	rm "$final_path"
+    fi
+
+    rm -f "$related"
+}
+
+function journal {
+    edit "$(date +%Y/%m/%d)"
+}
+
+function pomodoro {
+    while true; do
+	echo -ne "\033[91mPomodoro goal?\033[0m "
+	local purpose
+	read -r purpose
+
+	local end_time
+	end_time="$(date -d "+25 minutes")"
+
+	local end_timestamp
+	end_timestamp="$(date -d "$end_time" +%s)"
+
+	echo -e "\n> Pomodoro will end at ${end_time}"
+	echo -n "> "
+	while (( $(date +%s) < end_timestamp )); do
+	    sleep 60
+	    echo -n "."
+	done
+	echo -e '\a'
+
+	$SELF new pomodoro "$purpose"
+	echo -e "> Recorded.\n"
+
+	end_time="$(date -d "+5 minutes")"
+	end_timestamp="$(date -d "$end_time" +%s)"
+	echo ">️Break will end at ${end_time}"
+	echo -n "> "
+	while (( $(date +%s) < end_timestamp )); do
+	    sleep 60
+	    echo -n "."
+	done
+	echo -e "\a\n\n"
+    done
+}
+
+function sql {
+    exec /usr/bin/env sqlite3 :memory: -cmd ".load $TDX_MDF sqlite3_markdown_files_init" "$@"
 }
 
 function main {
@@ -215,8 +321,17 @@ function main {
 	e|edit)
 	    edit "$@"
 	    ;;
+	j|journal)
+	    journal "$@"
+	    ;;
 	q|query)
 	    query "$@"
+	    ;;
+	p|pomo|pomodoro)
+	    pomodoro "$@"
+	    ;;
+	s|sql)
+	    sql "$@"
 	    ;;
 	*)
 	    print_usage
