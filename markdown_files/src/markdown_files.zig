@@ -83,8 +83,13 @@ pub fn vtabOpen(p_vtab: [*c]c.sqlite3_vtab, pp_cursor: [*c][*c]c.sqlite3_vtab_cu
 
     var p_state: *CursorState = c_allocator.create(CursorState) catch return c.SQLITE_NOMEM;
     p_state.walker = walker;
-    p_state.entry = p_state.walker.next() catch return c.SQLITE_ERROR;
     p_state.stat = null;
+    while (true) {
+        p_state.entry = p_state.walker.next() catch return c.SQLITE_ERROR;
+        if (p_state.entry == null or p_state.entry.?.kind == std.fs.Dir.Entry.Kind.file) {
+            break;
+        }
+    }
 
     std.debug.assert(p_state.*.stat == null);
     new_cursor.state = p_state;
@@ -105,10 +110,9 @@ pub fn vtabNext(p_cur_base: [*c]c.sqlite3_vtab_cursor) callconv(.C) c_int {
     cursor.*.row_id += 1;
     var state = @as(*CursorState, @ptrCast(@alignCast(cursor.*.state)));
 
+    state.stat = null;
     while (true) {
         state.entry = state.walker.next() catch return c.SQLITE_ERROR;
-        state.stat = null;
-
         if (state.entry == null or state.entry.?.kind == std.fs.Dir.Entry.Kind.file) {
             break;
         }
