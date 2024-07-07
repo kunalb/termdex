@@ -325,6 +325,7 @@ fn frontMatter(
     var return_next_token = false;
     while (true) {
         if (c.yaml_parser_parse(&parser, &event) != 1) {
+            std.debug.print("Failed to parse {s}\n\n", .{abs_path});
             return FrontMatterError.YAMLParserError;
         }
         defer c.yaml_event_delete(&event);
@@ -356,6 +357,7 @@ fn frontMatter(
 
     while (state_stack.items.len > 0) {
         if (c.yaml_parser_parse(&parser, &event) != 1) {
+            std.debug.print("Failed to parse {s}\n\n", .{abs_path});
             return FrontMatterError.YAMLParserError;
         }
         defer c.yaml_event_delete(&event);

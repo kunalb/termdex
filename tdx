@@ -7,7 +7,7 @@
 # - [x] Query implementation
 # - [x] New implementation: include templates
 # - [x] Edit implementation: show related files
-# - [ ] Grouped rendering for a CLI focalboard based on queries
+# - [x] Grouped rendering for a CLI focalgoard based on queries
 # - [x] Pomodoro implementation
 # - [ ] Publish implementation
 # - [ ] Utility language to expand time
@@ -59,7 +59,8 @@ function print_usage {
     echo "  j, journal"
     echo "  p, pomodoro"
     echo "  s, sql"
-    echo "  b, board [group by]"
+    echo "  b, board [group by] [filter]"
+    echo "  t, tasks [collection]"
     exit 1
 }
 
@@ -84,7 +85,7 @@ function new {
 ---
 title: ${1:-}
 collection: ${2:-}
-tags: []
+tags:
 what: note
 publish: true
 ---
@@ -96,10 +97,10 @@ EOF
 ---
 title: ${1:-}
 collection: ${2:-}
-tags: []
+tags:
 what: task
 when: someday    # today, tomorrow, week, month, quarter, someday
-status: *        # blocked, active, done
+status:          # blocked, active, done
 deadline:
 ---
 
@@ -111,7 +112,7 @@ EOF
 title: ${1:-}
 url: ${2:-}
 collection: ${3:-}
-tags: []
+tags:
 what: bookmark
 source:
 publish: true
@@ -145,7 +146,7 @@ EOF
 ---
 title: ${1:-}
 collection: ${2:-}
-tags: []
+tags:
 what: $template
 ---
 
@@ -199,7 +200,7 @@ EOF
 	fzf --header "TERMinal inDEX    [$(pwd)]    [$(date +%F)]" \
 	--header-first \
 	--preview 'file=$(echo {1}); bat --theme=zenburn --color=always --style=plain "$file"' \
-	--preview-window 'right:border-sharp:wrap' \
+	--preview-window 'bottom:border-sharp:wrap' \
 	--layout reverse \
 	--bind 'ctrl-r:reload(eval "$FZF_DEFAULT_COMMAND")' \
 	--bind 'enter:execute(eval "$SELF e {1}")+reload(eval "$FZF_DEFAULT_COMMAND")' \
@@ -275,14 +276,72 @@ EOF
 }
 
 function journal {
-    edit "$(date +%Y/%m/%d)"
+    local path
+    path="$(date +%Y/%m/%d).md"
+
+    local parent_dir
+    parent_dir="$(dirname "$path")"
+    mkdir -p "$parent_dir"
+
+    if [[ ! -f "$path" ]]; then
+	cat <<EOF >"$path"
+---
+title: $(date +%F)
+---
+EOF
+    fi
+
+    local related
+    related="$(mktemp "related-$(date +%F)-XXX.md")"
+
+    local location
+    location=$(pwd)
+
+    local query
+    query="$(cat <<EOF
+SELECT
+  '=== '||path||' ===',
+  mdf_contents(path) AS file
+FROM
+  markdown_files
+WHERE
+  basename LIKE '%.md'
+  AND path NOT LIKE '%.git%'
+  AND SUBSTR(path, length('$location') + 2) LIKE '${path%.md}%'
+ORDER BY
+  mdf_front_matter(path, 'what') ASC,
+  mtime_s DESC,
+  path ASC;
+EOF
+)"
+
+    "$SELF" sql "-list" '.separator \n' "$query" \
+	    | tr -d '\r' > "$related";
+    chmod -w "$related"
+
+    if [[ ! -s "$related" ]]; then
+	rm -f "$related"
+	"$EDITOR" "$path"
+    else
+	"$EDITOR" "$path" "$related"
+    fi
+
+    if [[ ! -s "$path" ]]; then
+	rm "$path"
+    fi
+
+    rm -f "$related"
 }
 
 function pomodoro {
     while true; do
-	echo -ne "\033[91mPomodoro goal?\033[0m "
+	echo -ne "\033[91mPomodoro goal?\033[0m      : "
 	local purpose
 	read -r purpose
+
+	local collection
+	echo -ne "\033[91mAdd to collection?\033[0m  : "
+	read -r collection
 
 	local end_time
 	end_time="$(date -d "+25 minutes")"
@@ -298,12 +357,12 @@ function pomodoro {
 	done
 	echo -e '\a'
 
-	$SELF new pomodoro "$purpose"
+	$SELF new pomodoro "$purpose" "$collection"
 	echo -e "> Recorded.\n"
 
 	end_time="$(date -d "+5 minutes")"
 	end_timestamp="$(date -d "$end_time" +%s)"
-	echo ">️Break will end at ${end_time}"
+	echo "> Break will end at ${end_time}"
 	echo -n "> "
 	while (( $(date +%s) < end_timestamp )); do
 	    sleep 60
@@ -326,8 +385,7 @@ SELECT
 FROM
   markdown_files
 WHERE
-  mdf_front_matter(path, '$group_by') is not null
-  AND (
+  (
     mdf_front_matter(path, 'status') != 'done'
     OR mdf_front_matter(path, 'status') IS NULL
   )
@@ -351,6 +409,68 @@ EOF
 	    --layout reverse \
 	    --bind 'enter:execute(eval "$SELF e {1}")+become(eval "$SELF b $group_by")' \
 	    --info inline-right
+}
+
+function tasks {
+    local whens=(today week month quarter half year someday unset)
+
+    local location
+    location=$(pwd)
+
+    for when in "${whens[@]}"; do
+	local group_query
+	group_query="$(cat <<EOF
+SELECT
+  substr(path, length('$location') + 2),
+  mdf_front_matter(path, 'title'),
+  mdf_front_matter(path, 'collection'),
+  mdf_front_matter(path, 'tags')
+FROM markdown_files
+WHERE
+  mdf_front_matter(path, 'when') = '$when'
+  AND basename LIKE '%.md'
+  AND path NOT LIKE '%.git%'
+  AND COALESCE(mdf_front_matter(path, 'status'), 'unset') != 'done'
+  ${1:+AND coalesce(mdf_front_matter(path, 'collection'), 'unset') = '$1'}
+ORDER BY
+  mtime_s DESC
+EOF
+	)";
+	printf "=== %-72s ===\n" "$when"
+	"$SELF" sql "-list" ".separator ' '" "$group_query"
+	echo
+    done |\
+      fzf --header "TERMinal inDEX    [$(pwd)]    [$(date +%F)]" \
+	  --header-first \
+	  --preview 'file=$(echo {1}); [[ -f "$file" ]] && bat --theme=zenburn --color=always --style=plain "$file"' \
+	  --preview-window 'bottom:border-sharp:wrap' \
+	  --layout reverse \
+	  --bind 'enter:become(eval "tmux display-popup -w 90% -h 90% -E $SELF e {1} && $SELF t $1")' \
+	  --bind 'ctrl-n:become(eval "tmux display-popup -w 90% -h 90% -E $SELF n t && $SELF t $1")' \
+	  --info inline-right
+
+    # TODO show uncategorized
+    #    local query
+    #    query=$(cat <<EOF
+    #SELECT
+    #  DISTINCT(
+    #    CASE
+    #      WHEN mdf_front_matter(path, 'when') IS NULL OR mdf_front_matter(path, 'when') = ''
+    #      THEN 'unset'
+    #      ELSE mdf_front_matter(path, 'when')
+    #    END
+    #  )
+    #FROM
+    #  markdown_files
+    #WHERE
+    #  COALESCE(mdf_front_matter(path, 'status'), 'unset') != 'done'
+    #GROUP BY 1
+    #ORDER BY COUNT(1) DESC
+    #EOF
+    #)
+    #    local vals
+    #    vals="$("$SELF" sql "-list" "$query")"
+    #    echo "$vals"
 }
 
 function main {
@@ -387,6 +507,9 @@ function main {
 	    ;;
 	b|board)
 	    board "$@"
+	    ;;
+	t|tasks)
+	    tasks "$@"
 	    ;;
 	*)
 	    print_usage
