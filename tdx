@@ -337,13 +337,13 @@ EOF
 
 function pomodoro {
     while true; do
-	echo -ne "\033[91mPomodoro goal?\033[0m      : "
+	echo -ne "\033[91mPomodoro goal?\033[0m\n"
 	local purpose
-	read -r purpose
+	read -e -r purpose
 
 	local collection
-	echo -ne "\033[91mAdd to collection?\033[0m  : "
-	read -r collection
+	echo -ne "\033[91mAdd to collection?\033[0m\n"
+	read -e -r collection
 
 	local end_time
 	end_time="$(date -d "+25 minutes")"
