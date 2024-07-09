@@ -423,7 +423,7 @@ const FrontMatterState = enum {
     MappingVal,
 };
 
-export fn sqlite3_markdown_files_init(
+export fn sqlite3_markdownfiles_init(
     db: *c.sqlite3,
     pzErrMsg: [*c][*c]u8,
     pApi: [*c]const c.sqlite3_api_routines,

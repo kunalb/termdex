@@ -22,7 +22,9 @@ fi
 CUR_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 readonly CUR_DIR
 readonly TDX_MDF="${TDX_MDF:-"$CUR_DIR/markdown_files/zig-out/lib/libmarkdown_files.so"}"
+readonly BAT_THEME="${BAT_THEME:-base16}"
 export SELF="$0"
+
 
 
 ########################################################################
@@ -190,7 +192,7 @@ EOF
     command=$(cat <<EOF
 /usr/bin/env \
   sqlite3 -list -separator "" :memory: \
-  ".load $TDX_MDF sqlite3_markdown_files_init" \
+  ".load $TDX_MDF" \
   "$sql_query"
 EOF
 			  );
@@ -199,7 +201,7 @@ EOF
 	export FZF_DEFAULT_COMMAND="$command";
 	fzf --header "TERMinal inDEX    [$(pwd)]    [$(date +%F)]" \
 	--header-first \
-	--preview 'file=$(echo {1}); bat --theme=zenburn --color=always --style=plain "$file"' \
+	--preview 'file=$(echo {1}); bat --color=always --style=plain "$file"' \
 	--preview-window 'bottom:border-sharp:wrap' \
 	--layout reverse \
 	--bind 'ctrl-r:reload(eval "$FZF_DEFAULT_COMMAND")' \
@@ -373,7 +375,7 @@ function pomodoro {
 }
 
 function sql {
-    exec /usr/bin/env sqlite3 :memory: -cmd ".load $TDX_MDF sqlite3_markdown_files_init" "$@"
+    exec /usr/bin/env sqlite3 :memory: -cmd ".load $TDX_MDF" "$@"
 }
 
 function board {
@@ -404,7 +406,7 @@ EOF
     done |\
 	fzf --header "TERMinal inDEX    [$(pwd)]    [$(date +%F)]" \
 	    --header-first \
-	    --preview 'file=$(echo {1}); bat --theme=zenburn --color=always --style=plain "$file"' \
+	    --preview 'file=$(echo {1}); bat --color=always --style=plain "$file"' \
 	    --preview-window 'bottom:border-sharp:wrap' \
 	    --layout reverse \
 	    --bind 'enter:execute(eval "$SELF e {1}")+become(eval "$SELF b $group_by")' \
@@ -442,7 +444,7 @@ EOF
     done |\
       fzf --header "TERMinal inDEX    [$(pwd)]    [$(date +%F)]" \
 	  --header-first \
-	  --preview 'file=$(echo {1}); [[ -f "$file" ]] && bat --theme=zenburn --color=always --style=plain "$file"' \
+	  --preview 'file=$(echo {1}); [[ -f "$file" ]] && bat --color=always --style=plain "$file"' \
 	  --preview-window 'bottom:border-sharp:wrap' \
 	  --layout reverse \
 	  --bind 'enter:become(eval "tmux display-popup -w 90% -h 90% -E $SELF e {1} && $SELF t $1")' \
