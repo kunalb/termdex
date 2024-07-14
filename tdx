@@ -22,9 +22,21 @@ fi
 CUR_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 readonly CUR_DIR
 readonly TDX_MDF="${TDX_MDF:-"$CUR_DIR/markdown_files/zig-out/lib/libmarkdown_files.so"}"
-readonly BAT_THEME="${BAT_THEME:-base16}"
+export BAT_THEME="${BAT_THEME:-base16}"
+readonly BAT_THEME
 export SELF="$0"
 
+if [[ -z "${ZED_TERM:-}" ]]; then
+    export FZF_DEFAULT_OPTS="--preview 'file=\$(echo {1}); [[ -f "\$file" ]] && bat --color=always --style=plain "\$file"' --preview-window 'bottom:border-sharp:wrap'"
+fi
+
+if [[ -n "${ZED_TERM:-}" ]]; then
+    export EDITOR="zed";
+fi
+
+FZF_DEFAULT_OPTS="--header \"TERMinal inDEX | $(pwd) \$ tdx ${*}\" ${FZF_DEFAULT_OPTS:-}"
+FZF_DEFAULT_OPTS="--header-first ${FZF_DEFAULT_OPTS:-}"
+FZF_DEFAULT_OPTS="--layout reverse ${FZF_DEFAULT_OPTS:-}"
 
 
 ########################################################################
@@ -36,15 +48,15 @@ function err {
 
 function check_dep {
     if ! command -v "$1" &> /dev/null; then
-	err "Couldn't find $1 in \$PATH: please make sure it's installed!"
-	exit 1
+        err "Couldn't find $1 in \$PATH: please make sure it's installed!"
+        exit 1
     fi
 }
 
 function check_lib {
     if [[ ! -f "$1" ]]; then
-	err "Couldn't find $1: please make sure it's available!"
-	exit 1
+        err "Couldn't find $1: please make sure it's available!"
+        exit 1
     fi
 }
 
@@ -69,7 +81,7 @@ function print_usage {
 function new {
     local template="${1:-}"
     if [[ -n "$template" ]]; then
-	shift
+        shift
     fi
 
     local path
@@ -82,8 +94,8 @@ function new {
     local full_path="$path/$filename"
 
     case "$template" in
-	n|note)
-	    cat <<EOF >"$full_path"
+        n|note)
+            cat <<EOF >"$full_path"
 ---
 title: ${1:-}
 collection: ${2:-}
@@ -93,9 +105,9 @@ publish: true
 ---
 
 EOF
-	    ;;
-	t|task)
-	    cat <<EOF >"$full_path"
+            ;;
+        t|task)
+            cat <<EOF >"$full_path"
 ---
 title: ${1:-}
 collection: ${2:-}
@@ -107,9 +119,9 @@ deadline:
 ---
 
 EOF
-	    ;;
-	b|bookmark)
-	    cat <<EOF >"$full_path"
+            ;;
+        b|bookmark)
+            cat <<EOF >"$full_path"
 ---
 title: ${1:-}
 url: ${2:-}
@@ -121,9 +133,9 @@ publish: true
 ---
 
 EOF
-	    ;;
-	r|reminder)
-	    cat <<EOF >"$full_path"
+            ;;
+        r|reminder)
+            cat <<EOF >"$full_path"
 ---
 title: ${1:-}
 when: ${2:-}
@@ -132,9 +144,9 @@ what: reminder
 ---
 
 EOF
-	    ;;
-	p|pomo|pomodoro)
-	    cat <<EOF >"$full_path"
+            ;;
+        p|pomo|pomodoro)
+            cat <<EOF >"$full_path"
 ---
 title: ${1:-}
 collection: ${2:-}
@@ -142,9 +154,19 @@ what: pomodoro
 ---
 
 EOF
-	    ;;
-	*)
-	    cat <<EOF >"$full_path"
+            ;;
+        m|meeting)
+            cat <<EOF >"$full_path"
+---
+title: ${1:-}
+collection: ${2:-}
+what: meeting
+---
+
+EOF
+            ;;
+        *)
+            cat <<EOF >"$full_path"
 ---
 title: ${1:-}
 collection: ${2:-}
@@ -157,7 +179,7 @@ EOF
     "$EDITOR" "$full_path"
 
     if  [[ ! -s "$full_path" ]]; then
-	rm "$full_path"
+        rm "$full_path"
     fi
 }
 
@@ -169,13 +191,13 @@ function query {
     sql_query=$(cat <<EOF
 SELECT
   substr(path, length('$location') + 2),
+  ' #',
+  mdf_front_matter(path, 'collection'),
   ' / ',
   mdf_front_matter(path, 'title'),
-  ' ',
-  mdf_front_matter(path, 'collection'),
-  ' ',
+  ' (',
   mdf_front_matter(path, 'what'),
-  ' ',
+  ') ',
   mdf_front_matter(path, 'tags')
 FROM
   markdown_files
@@ -187,7 +209,7 @@ ORDER BY
   mtime_s DESC,
   path ASC
 EOF
-	  );
+          );
 
     command=$(cat <<EOF
 /usr/bin/env \
@@ -195,19 +217,14 @@ EOF
   ".load $TDX_MDF" \
   "$sql_query"
 EOF
-			  );
+                          );
 
     (
-	export FZF_DEFAULT_COMMAND="$command";
-	fzf --header "TERMinal inDEX    [$(pwd)]    [$(date +%F)]" \
-	--header-first \
-	--preview 'file=$(echo {1}); bat --color=always --style=plain "$file"' \
-	--preview-window 'bottom:border-sharp:wrap' \
-	--layout reverse \
-	--bind 'ctrl-r:reload(eval "$FZF_DEFAULT_COMMAND")' \
-	--bind 'enter:execute(eval "$SELF e {1}")+reload(eval "$FZF_DEFAULT_COMMAND")' \
-	--bind 'ctrl-n:execute(eval "$SELF n")' \
-	--info inline-right
+        export FZF_DEFAULT_COMMAND="$command";
+        fzf --bind 'ctrl-r:reload(eval "$FZF_DEFAULT_COMMAND")' \
+        --bind 'enter:execute(eval "$SELF e {1}")+reload(eval "$FZF_DEFAULT_COMMAND")' \
+        --bind 'ctrl-n:execute(eval "$SELF n")' \
+        --info inline-right
     )
 
 }
@@ -222,13 +239,13 @@ function edit {
     local final_path
 
     if [[ "$path" == *".md" ]]; then
-	final_path="$path"
+        final_path="$path"
     else
-	final_path="${path}.md"
+        final_path="${path}.md"
     fi
 
     if [[ ! -f "$final_path" ]]; then
-	cat <<EOF >"$final_path"
+        cat <<EOF >"$final_path"
 ---
 title:
 ---
@@ -259,19 +276,19 @@ ORDER BY
 EOF
 )"
 
-    "$SELF" sql "-list" '.separator \n' "$query" \
-	    | tr -d '\r' > "$related";
+    "$SELF" sql "-list" ".separator \n" "$query" \
+            | tr -d '\r' > "$related";
     chmod -w "$related"
 
     if [[ ! -s "$related" ]]; then
-	rm -f "$related"
-	"$EDITOR" "$final_path"
+        rm -f "$related"
+        "$EDITOR" "$final_path"
     else
-	"$EDITOR" "$final_path" "$related"
+        "$EDITOR" "$final_path" "$related"
     fi
 
     if [[ ! -s "$final_path" ]]; then
-	rm "$final_path"
+        rm "$final_path"
     fi
 
     rm -f "$related"
@@ -286,7 +303,7 @@ function journal {
     mkdir -p "$parent_dir"
 
     if [[ ! -f "$path" ]]; then
-	cat <<EOF >"$path"
+        cat <<EOF >"$path"
 ---
 title: $(date +%F)
 ---
@@ -317,61 +334,106 @@ ORDER BY
 EOF
 )"
 
-    "$SELF" sql "-list" '.separator \n' "$query" \
-	    | tr -d '\r' > "$related";
-    chmod -w "$related"
+    "$SELF" sql "-list" '.separator \n' "$query"
 
-    if [[ ! -s "$related" ]]; then
-	rm -f "$related"
-	"$EDITOR" "$path"
-    else
-	"$EDITOR" "$path" "$related"
-    fi
+        "$EDITOR" "$path"
 
     if [[ ! -s "$path" ]]; then
-	rm "$path"
+        rm "$path"
     fi
+}
 
-    rm -f "$related"
+function notify {
+  local title="$1"
+  local summary="$2"
+
+  local ns
+  ns=$(which notify-send)
+  if (( $? != 0 )); then
+    return
+  fi
+
+  "$ns" --app-name "tdx" \
+        -u "normal" \
+        --action="action1=Focus Window" \
+        "$title" \
+        "$summary"
 }
 
 function pomodoro {
-    while true; do
-	echo -ne "\033[91mPomodoro goal?\033[0m\n"
-	local purpose
-	read -e -r purpose
+  while true; do
+    clear
 
-	local collection
-	echo -ne "\033[91mAdd to collection?\033[0m\n"
-	read -e -r collection
+    echo
+    echo -e "  \033[32m.v,\033[0m"
+    echo -e " \033[31m(\033[0m' \033[31m,)\033[0m"
+    echo
 
-	local end_time
-	end_time="$(date -d "+25 minutes")"
+    local location
+    location=$(pwd)
 
-	local end_timestamp
-	end_timestamp="$(date -d "$end_time" +%s)"
+    echo -e "\e[4mRecent pomodoros:\e[0m"
+    local sql_query
+    sql_query=$(cat <<EOF
+SELECT
+  substr(path, length('$location') + 2), ' / ',
+  mdf_front_matter(path, 'title'), ' #',
+  mdf_front_matter(path, 'collection')
+FROM
+  markdown_files
+WHERE
+  path LIKE '%.md'
+  AND path NOT LIKE '%.git'
+  AND mdf_front_matter(path, 'what') = 'pomodoro'
+ORDER BY
+   mtime_s DESC,
+   path ASC
+LIMIT 10
+EOF
+          );
+    /usr/bin/env \
+        sqlite3 -list -separator "" :memory: \
+        ".load $TDX_MDF" \
+        "$sql_query"
+    echo
 
-	echo -e "\n> Pomodoro will end at ${end_time}"
-	echo -n "> "
-	while (( $(date +%s) < end_timestamp )); do
-	    sleep 60
-	    echo -n "."
-	done
-	echo -e '\a'
+    echo -ne "\033[4mPomodoro goal?\033[0m\n"
+    local purpose
+    read -e -r purpose
 
-	$SELF new pomodoro "$purpose" "$collection"
-	echo -e "> Recorded.\n"
+    local collection
+    echo -ne "\033[4mAdd to collection?\033[0m\n"
+    read -e -r collection
 
-	end_time="$(date -d "+5 minutes")"
-	end_timestamp="$(date -d "$end_time" +%s)"
-	echo "> Break will end at ${end_time}"
-	echo -n "> "
-	while (( $(date +%s) < end_timestamp )); do
-	    sleep 60
-	    echo -n "."
-	done
-	echo -e "\a\n\n"
+    local end_time
+    end_time="$(date -d "+25 minutes")"
+
+    local end_timestamp
+    end_timestamp="$(date -d "$end_time" +%s)"
+
+    echo -e "\n> Pomodoro will end at ${end_time}"
+    echo -n "> "
+    while (( $(date +%s) < end_timestamp )); do
+        sleep 60
+        echo -n "."
     done
+    echo -e '\a'
+    notify "Pomodoro finished!" "${collection+$collection\n}$purpose"
+
+    $SELF new pomodoro "$purpose" "$collection"
+    echo -e "> Recorded.\n"
+
+    end_time="$(date -d "+5 minutes")"
+    end_timestamp="$(date -d "$end_time" +%s)"
+    echo "> Break will end at ${end_time}"
+    echo -n "> "
+    while (( $(date +%s) < end_timestamp )); do
+        sleep 60
+        echo -n "."
+    done
+    echo -e "\a\n\n"
+    notify "Break finished!" "$(date)"
+  done
 }
 
 function sql {
@@ -400,32 +462,29 @@ EOF
     vals="$("$SELF" sql "-list" "$query")"
 
     for val in $vals; do
-	echo -e "=== ${val} ==="
-	    "$SELF" sql "-list" ".separator ' '" "SELECT path, mdf_front_matter(path, 'title'), mdf_front_matter(path, 'collection'), mdf_front_matter(path, 'tags') FROM markdown_files WHERE mdf_front_matter(path, '$group_by') = '$val' AND basename LIKE '%.md' AND path NOT LIKE '%.git%' ${2:+AND $2} ORDER BY mtime_s DESC"
-	echo
+        echo -e "=== ${val} ==="
+            "$SELF" sql "-list" ".separator ' '" "SELECT path, mdf_front_matter(path, 'title'), mdf_front_matter(path, 'collection'), mdf_front_matter(path, 'tags') FROM markdown_files WHERE mdf_front_matter(path, '$group_by') = '$val' AND basename LIKE '%.md' AND path NOT LIKE '%.git%' ${2:+AND $2} ORDER BY mtime_s DESC"
+        echo
     done |\
-	fzf --header "TERMinal inDEX    [$(pwd)]    [$(date +%F)]" \
-	    --header-first \
-	    --preview 'file=$(echo {1}); bat --color=always --style=plain "$file"' \
-	    --preview-window 'bottom:border-sharp:wrap' \
-	    --layout reverse \
-	    --bind 'enter:execute(eval "$SELF e {1}")+become(eval "$SELF b $group_by")' \
-	    --info inline-right
+        fzf --bind 'enter:execute(eval "$SELF e {1}")+become(eval "$SELF b $group_by")' \
+            --info inline-right
 }
 
 function tasks {
-    local whens=(today week month quarter half year someday unset)
+  local collection="${1:-}"
+  local whens=(today week month quarter half year someday unset)
 
-    local location
-    location=$(pwd)
+  local location
+  location=$(pwd)
 
-    for when in "${whens[@]}"; do
-	local group_query
-	group_query="$(cat <<EOF
+  for when in "${whens[@]}"; do
+      local group_query
+      group_query="$(cat <<EOF
 SELECT
-  substr(path, length('$location') + 2),
+  printf('%-28s', substr(path, length('$location') + 2)),
+  printf('#%-20s', substr(mdf_front_matter(path, 'collection'), length('projects/'))),
+  printf('@%-10s', mdf_front_matter(path, 'status')),
   mdf_front_matter(path, 'title'),
-  mdf_front_matter(path, 'collection'),
   mdf_front_matter(path, 'tags')
 FROM markdown_files
 WHERE
@@ -433,23 +492,18 @@ WHERE
   AND basename LIKE '%.md'
   AND path NOT LIKE '%.git%'
   AND COALESCE(mdf_front_matter(path, 'status'), 'unset') != 'done'
-  ${1:+AND coalesce(mdf_front_matter(path, 'collection'), 'unset') = '$1'}
+  ${1:+AND coalesce(mdf_front_matter(path, 'collection'), 'unset') LIKE '$collection%'}
 ORDER BY
   mtime_s DESC
 EOF
-	)";
-	printf "=== %-72s ===\n" "$when"
-	"$SELF" sql "-list" ".separator ' '" "$group_query"
-	echo
+        )";
+      printf "=== %-72s ===\n" "$when"
+      "$SELF" sql "-list" ".separator ' '" "$group_query"
+      echo
     done |\
-      fzf --header "TERMinal inDEX    [$(pwd)]    [$(date +%F)]" \
-	  --header-first \
-	  --preview 'file=$(echo {1}); [[ -f "$file" ]] && bat --color=always --style=plain "$file"' \
-	  --preview-window 'bottom:border-sharp:wrap' \
-	  --layout reverse \
-	  --bind 'enter:become(eval "tmux display-popup -w 90% -h 90% -E $SELF e {1} && $SELF t $1")' \
-	  --bind 'ctrl-n:become(eval "tmux display-popup -w 90% -h 90% -E $SELF n t && $SELF t $1")' \
-	  --info inline-right
+      fzf --bind "enter:become(eval \"$SELF e {1} && $SELF t $collection\")" \
+          --bind "ctrl-n:become(eval \"$SELF n t '' $collection && $SELF t $collection\")" \
+          --info inline-right
 
     # TODO show uncategorized
     #    local query
@@ -482,39 +536,39 @@ function main {
     check_lib "$TDX_MDF"
 
     if (( $# < 1 )); then
-	print_usage
+        print_usage
     fi
 
     local basecmd="${1:-}"
     shift
 
     case "$basecmd" in
-	n|new)
-	    new "$@"
-	    ;;
-	e|edit)
-	    edit "$@"
-	    ;;
-	j|journal)
-	    journal "$@"
-	    ;;
-	q|query)
-	    query "$@"
-	    ;;
-	p|pomo|pomodoro)
-	    pomodoro "$@"
-	    ;;
-	s|sql)
-	    sql "$@"
-	    ;;
-	b|board)
-	    board "$@"
-	    ;;
-	t|tasks)
-	    tasks "$@"
-	    ;;
-	*)
-	    print_usage
+        n|new)
+            new "$@"
+            ;;
+        e|edit)
+            edit "$@"
+            ;;
+        j|journal)
+            journal "$@"
+            ;;
+        q|query)
+            query "$@"
+            ;;
+        p|pomo|pomodoro)
+            pomodoro "$@"
+            ;;
+        s|sql)
+            sql "$@"
+            ;;
+        b|board)
+            board "$@"
+            ;;
+        t|tasks)
+            tasks "$@"
+            ;;
+        *)
+            print_usage
     esac
 }
 
