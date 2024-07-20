@@ -208,7 +208,7 @@ EOF
     command=$(cat <<EOF
 /usr/bin/env \
   sqlite3 -list -separator "" :memory: \
-  ".load $TDX_MDF" \
+  ".load ${TDX_MDF%.so}" \
   "$sql_query"
 EOF
 	   );
@@ -387,7 +387,7 @@ EOF
 		 );
 	/usr/bin/env \
 	    sqlite3 -list -separator "" :memory: \
-	    ".load $TDX_MDF" \
+	    ".load ${TDX_MDF%.so}" \
 	    "$sql_query"
 	echo
 
@@ -431,7 +431,7 @@ EOF
 }
 
 function sql {
-    exec /usr/bin/env sqlite3 :memory: -cmd ".load $TDX_MDF" "$@"
+    exec /usr/bin/env sqlite3 :memory: -cmd ".load ${TDX_MDF%.so}" "$@"
 }
 
 function board {
@@ -544,7 +544,7 @@ ORDER BY
 EOF
 )";
 
-    exec /usr/bin/env sqlite3 :memory: -list -cmd ".load $TDX_MDF" "$query"
+    exec /usr/bin/env sqlite3 :memory: -list -cmd ".load ${TDX_MDF%.so}" "$query"
 }
 
 function main {

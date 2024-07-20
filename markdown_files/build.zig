@@ -30,6 +30,7 @@ pub fn build(b: *std.Build) void {
 
     lib.linkSystemLibrary("sqlite3");
     lib.linkSystemLibrary("yaml");
+    lib.linkSystemLibrary("cmark-gfm");
     // lib.addIncludePath(b.path("/usr/include"));
 
     // This declares intent for the library to be installed into the standard

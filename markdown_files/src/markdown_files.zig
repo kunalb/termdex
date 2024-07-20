@@ -1,5 +1,6 @@
 const std = @import("std");
 const frontMatter = @import("front_matter.zig");
+const markdown = @import("markdown.zig");
 
 const c = @cImport({
     @cInclude("string.h");
@@ -279,6 +280,27 @@ fn mdfFrontMatterFunc(ctx: ?*c.sqlite3_context, argc: c_int, pp_value: [*c]?*c.s
     }
 }
 
+fn mdfToHTMLFunc(ctx: ?*c.sqlite3_context, argc: c_int, pp_value: [*c]?*c.sqlite3_value) callconv(.C) void {
+    std.debug.assert(argc == 1);
+    const abs_path: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[0])));
+    const val = markdown.toHTML(std.mem.span(abs_path), c_allocator) catch |err| {
+        const err_msg = std.fmt.allocPrint(c_allocator, "{?}", .{err}) catch {
+            sqlite3_api.*.result_error.?(ctx, "Ran out of memory while trying to report error!", -1);
+            return;
+        };
+
+        defer c_allocator.free(err_msg);
+        sqlite3_api.*.result_error.?(ctx, err_msg.ptr, @intCast(err_msg.len));
+        return;
+    };
+
+    if (val == null) {
+        sqlite3_api.*.result_null.?(ctx);
+    } else {
+        sqlite3_api.*.result_text.?(ctx, val.?.ptr, @intCast(val.?.len), null);
+    }
+}
+
 export fn sqlite3_markdownfiles_init(
     db: *c.sqlite3,
     pzErrMsg: [*c][*c]u8,
@@ -303,6 +325,21 @@ export fn sqlite3_markdownfiles_init(
         c.SQLITE_UTF8,
         null,
         mdfContentsFunc,
+        null,
+        null,
+        null,
+    );
+    if (rc != c.SQLITE_OK) {
+        return rc;
+    }
+
+    rc = c.sqlite3_create_function_v2(
+        db,
+        "mdf_to_html",
+        1,
+        c.SQLITE_UTF8,
+        null,
+        mdfToHTMLFunc,
         null,
         null,
         null,
