@@ -18,7 +18,7 @@ const FrontMatterError = error{
     YAMLParserError,
 };
 
-pub fn frontMatter(
+pub fn parseFrontMatter(
     abs_path: []const u8,
     field: []const u8,
     allocator: std.mem.Allocator,

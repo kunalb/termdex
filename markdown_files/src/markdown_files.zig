@@ -261,7 +261,7 @@ fn mdfFrontMatterFunc(ctx: ?*c.sqlite3_context, argc: c_int, pp_value: [*c]?*c.s
     const abs_path: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[0])));
     const field: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[1])));
 
-    const val = frontMatter.frontMatter(std.mem.span(abs_path), std.mem.span(field), c_allocator) catch |err| {
+    const val = frontMatter.parseFrontMatter(std.mem.span(abs_path), std.mem.span(field), c_allocator) catch |err| {
         const err_msg = std.fmt.allocPrint(c_allocator, "{?}", .{err}) catch {
             sqlite3_api.*.result_error.?(ctx, "Ran out of memory while trying to report error!", -1);
             return;
