@@ -24,7 +24,7 @@ jobs:
       - name: Install libyaml & SQLite
         run: |
           sudo apt-get update
-          sudo apt-get install -y libyaml-dev libsqlite3-dev
+          sudo apt-get install -y libyaml-dev libsqlite3-dev libcmark-gfm-dev libcmark-gfm-extensions-dev
 
       - name: Build SQLite extension
         working-directory: ./markdown_files
