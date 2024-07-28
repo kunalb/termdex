@@ -69,6 +69,7 @@ function print_usage {
     echo "  b, board [group by] [filter]"
     echo "  t, tasks [collection]"
     echo "  w, week"
+    echo "  r, ripgrep"
     exit 1
 }
 
@@ -476,7 +477,7 @@ function tasks {
         group_query="$(cat <<EOF
 SELECT
   printf('%-28s', substr(path, length('$location') + 2)),
-  printf('%-12s', mdf_front_matter(path, 'deadline')),
+  printf('>%-10s  ', mdf_front_matter(path, 'deadline')),
   printf('#%-20s', substr(mdf_front_matter(path, 'collection'), length('projects/'))),
   printf('@%-10s', mdf_front_matter(path, 'status')),
   mdf_front_matter(path, 'title'),
@@ -492,36 +493,14 @@ ORDER BY
   mtime_s DESC
 EOF
         )";
-        printf "=== %-72s ===\n" "$when"
+        printf "=== %-20s ===\n" "$when"
         "$SELF" sql "-list" ".separator ' '" "$group_query"
         echo
     done |\
         fzf --bind "enter:become(eval \"$SELF e {1} && $SELF t $collection\")" \
             --bind "ctrl-n:become(eval \"$SELF n t '' $collection && $SELF t $collection\")" \
+	    --with-nth "2.."
             --info inline-right
-
-    # TODO show uncategorized
-    #    local query
-    #    query=$(cat <<EOF
-    #SELECT
-    #  DISTINCT(
-    #    CASE
-    #      WHEN mdf_front_matter(path, 'when') IS NULL OR mdf_front_matter(path, 'when') = ''
-    #      THEN 'unset'
-    #      ELSE mdf_front_matter(path, 'when')
-    #    END
-    #  )
-    #FROM
-    #  markdown_files
-    #WHERE
-    #  COALESCE(mdf_front_matter(path, 'status'), 'unset') != 'done'
-    #GROUP BY 1
-    #ORDER BY COUNT(1) DESC
-    #EOF
-    #)
-    #    local vals
-    #    vals="$("$SELF" sql "-list" "$query")"
-    #    echo "$vals"
 }
 
 function week {
@@ -533,14 +512,14 @@ function week {
     query="$(cat <<EOF
 SELECT
   printf('%-80s', substr(path, length('$location') + 2)),
-  printf('%s%s', char(10), mdf_contents(path))
+  printf('%s%s%s', char(10), mdf_contents(path), char(10))
 FROM markdown_files
 WHERE
   mtime_s >= $start_time AND mtime_s <= $end_time
   AND basename LIKE '%.md'
   AND path NOT LIKE '%.git%'
+  ${1:+AND $1}
 ORDER BY
-  ctime_s DESC,
   mtime_s DESC
 EOF
 )";
@@ -548,10 +527,22 @@ EOF
     exec /usr/bin/env sqlite3 :memory: -list -cmd ".load ${TDX_MDF%.so}" "$query"
 }
 
+function ripgrep {
+  RG_PREFIX="rg --column --line-number --no-heading --color=always --smart-case "
+  INITIAL_QUERY="${*:-}"
+  fzf --ansi --disabled --query "$INITIAL_QUERY" \
+      --bind "start:reload:$RG_PREFIX {q}" \
+      --bind "change:reload:sleep 0.05; $RG_PREFIX {q} || true" \
+      --delimiter : \
+      --preview 'bat --style=plain {1} --highlight-line {2}' \
+      --bind 'enter:become($EDITOR {1} +{2})'
+}
+
 function main {
     check_dep fzf
     check_dep sqlite3
     check_dep bat
+    check_dep rg
     check_lib "$TDX_MDF"
 
     if (( $# < 1 )); then
@@ -588,6 +579,9 @@ function main {
             ;;
         w|week)
             week "$@"
+            ;;
+        r|ripgrep)
+            ripgrep "$@"
             ;;
         *)
             print_usage
