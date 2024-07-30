@@ -78,3 +78,4 @@ I'm fairly new to zig, and I'm still learning the idioms. Code reviews appreciat
 - [x] Update the extension to list files (recursively) in the directory
 - [x] Add support for parsing frontmatter (YAML)
 - [ ] Add support for parsing markdown itself (headers, links, wiki links)
+- [ ] Use virtual tables for all multiple valued columns

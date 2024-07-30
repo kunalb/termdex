@@ -313,14 +313,14 @@ export fn sqlite3_markdownfiles_init(
     if (rc != c.SQLITE_OK) {
         return rc;
     }
-    rc = c.sqlite3_create_module(db, "markdown_files\x00", &MarkdownFilesVTabModule, @ptrFromInt(0));
+    rc = c.sqlite3_create_module(db, "md_files\x00", &MarkdownFilesVTabModule, @ptrFromInt(0));
     if (rc != c.SQLITE_OK) {
         return rc;
     }
 
     rc = c.sqlite3_create_function_v2(
         db,
-        "mdf_contents",
+        "md_contents",
         1,
         c.SQLITE_UTF8,
         null,
@@ -335,7 +335,7 @@ export fn sqlite3_markdownfiles_init(
 
     rc = c.sqlite3_create_function_v2(
         db,
-        "mdf_to_html",
+        "md_html",
         1,
         c.SQLITE_UTF8,
         null,
@@ -348,5 +348,5 @@ export fn sqlite3_markdownfiles_init(
         return rc;
     }
 
-    return c.sqlite3_create_function_v2(db, "mdf_front_matter", 2, c.SQLITE_UTF8, null, mdfFrontMatterFunc, null, null, null);
+    return c.sqlite3_create_function_v2(db, "md_front_matter", 2, c.SQLITE_UTF8, null, mdfFrontMatterFunc, null, null, null);
 }

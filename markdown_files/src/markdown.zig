@@ -3,7 +3,6 @@ const c = @cImport({
     @cInclude("/usr/include/cmark-gfm.h");
 });
 
-// Uses malloc, no other choices
 pub fn toHTML(abs_path: []const u8, allocator: std.mem.Allocator) !?[]u8 {
     const file = try std.fs.cwd().openFile(abs_path, .{});
     defer file.close();
