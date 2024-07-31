@@ -1,4 +1,4 @@
-# Term(inal) (in)Dex (Cards)
+# Term(inal) (in)Dex (cards)
 
 This repository is aimed at being a collection of composable, unix-ish tools to easily query, manipulate, edit and render markdown files as index cards. This isn't even alpha yet, but I'm open sourcing it early just because.
 
