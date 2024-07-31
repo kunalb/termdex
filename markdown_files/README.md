@@ -4,7 +4,7 @@ A SQLite extension that makes it possible to do SQL queries over a collection of
 
 As a bonus, you can also use it to *render* markdown to html using helper functions.
 
-This is brand new software mainly written to scratch my own itch, please feel free to report bugs and issues -- I expect it will take some time and effort to make it rock solid.
+This is brand new software mainly written to scratch my own itch, please feel free to report bugs and issues -- I expect it will take some time and effort to make it good. I need to refactor a lot of the code as well.
 
 
 ## Getting Started
@@ -56,7 +56,7 @@ Check out the bash script at [termdex/tdx](https://github.com/kunalb/termdex/blo
 ## Code Outline
 This extension is fairly simple, and carefully broken down with
 - `markdown_files.zig` as the main interface to sqlite, written like C
-- `markdown.zig` functions to manipulate markdown
+- `contents.zig` functions to manipulate markdown
 - `front_matter.zig` functions to manipulate the yaml front-matter
 
 I'm fairly new to zig, and I'm still learning the idioms. Code reviews appreciated!
@@ -68,6 +68,8 @@ I'm fairly new to zig, and I'm still learning the idioms. Code reviews appreciat
 ## Change log and plans
 
 ### Future
+- [ ] Add support for parsing markdown itself (headers, links, wiki links)
+- [ ] Use virtual tables for all multiple valued columns
 - [ ] Add support for creating files by inserting records
 - [ ] Add support for updating files by modifying rows
 - [ ] Document and publish as a library & zig package
@@ -77,5 +79,3 @@ I'm fairly new to zig, and I'm still learning the idioms. Code reviews appreciat
 - [x] Translate the sample markdown table to a Zig extension
 - [x] Update the extension to list files (recursively) in the directory
 - [x] Add support for parsing frontmatter (YAML)
-- [ ] Add support for parsing markdown itself (headers, links, wiki links)
-- [ ] Use virtual tables for all multiple valued columns
