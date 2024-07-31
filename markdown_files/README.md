@@ -24,21 +24,21 @@ sqlite3
 .load libmarkdown_files.so
 
 # See all available files, with file metadata
-SELECT * FROM markdown_files
+SELECT * FROM md_files
 
 # Extract 'title' and contents from the YAML frontmatter
-SELECT path, mdf_front_matter(path, 'title'), mdf_contents(path) FROM markdown_files
+SELECT path, md_front_matter(path, 'title'), md_contents(path) FROM markdown_files
 
 # Make a virtual table pointing to a different folder
-CREATE VIRTUAL TABLE dex USING markdown_files(/home/knl/dex)
+CREATE VIRTUAL TABLE dex USING md_files(/home/knl/dex)
 
 # Make a view with the columns you care about
 CREATE TEMP VIEW posts (path, title, tags, content) AS
 SELECT
   path,
-  mdf_front_matter(path, 'title'),
-  mdf_front_matter(path, 'tags'),
-  mdf_contents(path)
+  md_front_matter(path, 'title'),
+  md_front_matter(path, 'tags'),
+  md_contents(path)
 FROM dex
 ```
 
