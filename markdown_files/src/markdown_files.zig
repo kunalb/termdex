@@ -1,6 +1,6 @@
 const std = @import("std");
 const frontMatter = @import("front_matter.zig");
-const markdown = @import("markdown.zig");
+const contents = @import("contents.zig");
 
 const c = @cImport({
     @cInclude("string.h");
@@ -246,7 +246,7 @@ fn mdContentsFunc(
     std.debug.assert(argc == 1);
     const absPath: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[0])));
 
-    const contents = std.fs.cwd().readFileAlloc(c_allocator, absPath[0..std.mem.len(absPath)], std.math.maxInt(usize)) catch |err| {
+    const file_contents = std.fs.cwd().readFileAlloc(c_allocator, absPath[0..std.mem.len(absPath)], std.math.maxInt(usize)) catch |err| {
         const msg = std.fmt.allocPrint(c_allocator, "Could not read contents of {s}: {}", .{ absPath, err }) catch {
             sqlite3_api.*.result_error.?(ctx, "Ran out of memory while trying to report read error!\\x00", -1);
             return;
@@ -254,7 +254,7 @@ fn mdContentsFunc(
         sqlite3_api.*.result_error.?(ctx, msg.ptr, @intCast(msg.len));
         return;
     };
-    sqlite3_api.*.result_text.?(ctx, contents.ptr, @intCast(contents.len), null);
+    sqlite3_api.*.result_text.?(ctx, file_contents.ptr, @intCast(file_contents.len), null);
 }
 
 fn mdFrontMatterFunc(ctx: ?*c.sqlite3_context, argc: c_int, pp_value: [*c]?*c.sqlite3_value) callconv(.C) void {
@@ -283,7 +283,7 @@ fn mdFrontMatterFunc(ctx: ?*c.sqlite3_context, argc: c_int, pp_value: [*c]?*c.sq
 fn mdToHTMLFunc(ctx: ?*c.sqlite3_context, argc: c_int, pp_value: [*c]?*c.sqlite3_value) callconv(.C) void {
     std.debug.assert(argc == 1);
     const abs_path: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[0])));
-    const val = markdown.toHTML(std.mem.span(abs_path), c_allocator) catch |err| {
+    const val = contents.toHTML(std.mem.span(abs_path), c_allocator) catch |err| {
         const err_msg = std.fmt.allocPrint(c_allocator, "{?}", .{err}) catch {
             sqlite3_api.*.result_error.?(ctx, "Ran out of memory while trying to report error!", -1);
             return;
