@@ -238,7 +238,7 @@ const MarkdownFilesVTabModule = c.sqlite3_module{
     // .xIntegrity = 0,
 };
 
-fn mdfContentsFunc(
+fn mdContentsFunc(
     ctx: ?*c.sqlite3_context,
     argc: c_int,
     pp_value: [*c]?*c.sqlite3_value,
@@ -257,7 +257,7 @@ fn mdfContentsFunc(
     sqlite3_api.*.result_text.?(ctx, contents.ptr, @intCast(contents.len), null);
 }
 
-fn mdfFrontMatterFunc(ctx: ?*c.sqlite3_context, argc: c_int, pp_value: [*c]?*c.sqlite3_value) callconv(.C) void {
+fn mdFrontMatterFunc(ctx: ?*c.sqlite3_context, argc: c_int, pp_value: [*c]?*c.sqlite3_value) callconv(.C) void {
     std.debug.assert(argc == 2);
     const abs_path: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[0])));
     const field: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[1])));
@@ -280,7 +280,7 @@ fn mdfFrontMatterFunc(ctx: ?*c.sqlite3_context, argc: c_int, pp_value: [*c]?*c.s
     }
 }
 
-fn mdfToHTMLFunc(ctx: ?*c.sqlite3_context, argc: c_int, pp_value: [*c]?*c.sqlite3_value) callconv(.C) void {
+fn mdToHTMLFunc(ctx: ?*c.sqlite3_context, argc: c_int, pp_value: [*c]?*c.sqlite3_value) callconv(.C) void {
     std.debug.assert(argc == 1);
     const abs_path: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[0])));
     const val = markdown.toHTML(std.mem.span(abs_path), c_allocator) catch |err| {
@@ -324,7 +324,7 @@ export fn sqlite3_markdownfiles_init(
         1,
         c.SQLITE_UTF8,
         null,
-        mdfContentsFunc,
+        mdContentsFunc,
         null,
         null,
         null,
@@ -339,7 +339,7 @@ export fn sqlite3_markdownfiles_init(
         1,
         c.SQLITE_UTF8,
         null,
-        mdfToHTMLFunc,
+        mdToHTMLFunc,
         null,
         null,
         null,
@@ -348,5 +348,5 @@ export fn sqlite3_markdownfiles_init(
         return rc;
     }
 
-    return c.sqlite3_create_function_v2(db, "md_front_matter", 2, c.SQLITE_UTF8, null, mdfFrontMatterFunc, null, null, null);
+    return c.sqlite3_create_function_v2(db, "md_front_matter", 2, c.SQLITE_UTF8, null, mdFrontMatterFunc, null, null, null);
 }
