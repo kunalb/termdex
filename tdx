@@ -29,6 +29,7 @@ if [[ -n "${ZED_TERM:-}" ]]; then
 fi
 
 FZF_DEFAULT_OPTS="--header \"TERMinal inDEX | $(pwd) \$ tdx ${*}\" ${FZF_DEFAULT_OPTS:-}"
+FZF_DEFAULT_OPTS="--color header:red ${FZF_DEFAULT_OPTS:-}"
 FZF_DEFAULT_OPTS="--header-first ${FZF_DEFAULT_OPTS:-}"
 FZF_DEFAULT_OPTS="--layout reverse ${FZF_DEFAULT_OPTS:-}"
 
