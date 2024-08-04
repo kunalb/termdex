@@ -15,6 +15,7 @@ pub fn build(b: *std.Build) void {
     lib.linkSystemLibrary("sqlite3");
     lib.linkSystemLibrary("yaml");
     lib.linkSystemLibrary("cmark-gfm");
+    lib.addLibraryPath(.{ .cwd_relative = "/usr/local/lib" });
     b.installArtifact(lib);
 
     const lib_unit_tests = b.addTest(.{

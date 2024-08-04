@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const c = @cImport({
-    @cInclude("/usr/include/yaml.h");
+    @cInclude("/usr/local/include/yaml.h");
 });
 
 const FrontMatterState = enum {
@@ -34,9 +34,9 @@ pub fn parseFrontMatter(
 
     var first = true;
     while (try in_stream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
-        if (first and !std.mem.eql(u8, line[0..3], "---")) {
+        if (first and !(line.len >= 3 and std.mem.eql(u8, line[0..3], "---"))) {
             break;
-        } else if (!first and std.mem.eql(u8, line[0..3], "---")) {
+        } else if (!first and line.len >= 3 and std.mem.eql(u8, line[0..3], "---")) {
             break;
         } else if (!first) {
             try raw_yaml.appendSlice(line);
