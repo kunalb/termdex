@@ -12,10 +12,7 @@ pub fn toHTML(abs_path: []const u8, allocator: std.mem.Allocator) !?[]u8 {
 }
 
 test "Test html conversion" {
-    const src = @src();
-    const src_dir = std.fs.path.dirname(src.file).?;
-    const test_file = try std.fs.path.join(std.heap.c_allocator, &.{ src_dir, "../resources/test_post.md" });
-
+    const test_file = "./resources/test_post.md";
     const converted = try toHTML(test_file, std.heap.c_allocator);
     const expected = "<h1>Heading</h1>\n<p>A paragraph of content with <a href=\"https://github.com/kunalb/termdex\">links</a>.</p>\n";
     try std.testing.expectEqualStrings(expected, converted.?);
