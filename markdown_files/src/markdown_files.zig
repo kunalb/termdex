@@ -4,7 +4,7 @@ const contents = @import("contents.zig");
 
 const c = @cImport({
     @cInclude("string.h");
-    @cInclude("/usr/include/sqlite3ext.h");
+    @cInclude("sqlite3ext.h");
 });
 
 // Keep things simple for interop with C, potentially revisit as needed

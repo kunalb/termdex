@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const c = @cImport({
-    @cInclude("/usr/local/include/yaml.h");
+    @cInclude("yaml.h");
 });
 
 const FrontMatterState = enum {

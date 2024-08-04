@@ -1,6 +1,6 @@
 const std = @import("std");
 const c = @cImport({
-    @cInclude("/usr/local/include/cmark-gfm.h");
+    @cInclude("cmark-gfm.h");
 });
 
 pub fn toHTML(abs_path: []const u8, allocator: std.mem.Allocator) !?[]u8 {

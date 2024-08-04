@@ -12,10 +12,11 @@ pub fn build(b: *std.Build) void {
         .pic = true,
         .link_libc = true,
     });
-    lib.linkSystemLibrary("sqlite3");
-    lib.linkSystemLibrary("yaml");
-    lib.linkSystemLibrary("cmark-gfm");
+    lib.addSystemIncludePath(.{ .cwd_relative = "/usr/local/include" });
     lib.addLibraryPath(.{ .cwd_relative = "/usr/local/lib" });
+    lib.linkSystemLibrary("sqlite3");
+    lib.linkSystemLibrary2("yaml", .{ .preferred_link_mode = std.builtin.LinkMode.dynamic });
+    lib.linkSystemLibrary2("cmark-gfm", .{ .preferred_link_mode = std.builtin.LinkMode.dynamic });
     b.installArtifact(lib);
 
     const lib_unit_tests = b.addTest(.{
@@ -24,6 +25,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
+    lib_unit_tests.addSystemIncludePath(.{ .cwd_relative = "/usr/local/include" });
+    lib_unit_tests.addLibraryPath(.{ .cwd_relative = "/usr/local/lib" });
     lib_unit_tests.linkSystemLibrary("sqlite3");
     lib_unit_tests.linkSystemLibrary("yaml");
     lib_unit_tests.linkSystemLibrary("cmark-gfm");
