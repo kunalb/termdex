@@ -67,7 +67,7 @@ pub fn build(b: *std.Build) !void {
     setupTarget(mdlib);
     b.installArtifact(mdlib);
 
-    const path = try std.fs.path.join(b.allocator, &.{ b.install_path, "/libmd.so" });
+    const path = try std.fs.path.join(b.allocator, &.{ b.install_path, "lib/libmd" });
     const options = b.addOptions();
     options.addOption([]const u8, "libmd_path", path);
 
@@ -81,6 +81,7 @@ pub fn build(b: *std.Build) !void {
     setupTarget(mdlib_tests);
     const run_mdlib_tests = b.addRunArtifact(mdlib_tests);
     const mdlib_tests_step = b.step("mdlib_tests", "Run mdlib tests");
+    mdlib_tests_step.dependOn(&mdlib.step);
     mdlib_tests_step.dependOn(&run_mdlib_tests.step);
 
     const lib_unit_tests = b.addTest(.{
