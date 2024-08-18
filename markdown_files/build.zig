@@ -11,6 +11,7 @@ fn addInitModule(b: *std.Build, lib: *std.Build.Step.Compile) !void {
         \\    pz_err_msg: [*c][*c]u8,
         \\    p_api: [*c]const root.csql.sqlite3_api_routines,
         \\) callconv(.C) c_int {{
+        \\    @import("std").debug.print("\n> Initialized sqlite3\n", .{{}});
         \\    const init_result = root.csql.sqlite3_initialize();
         \\    if (init_result != root.csql.SQLITE_OK) {{
         \\        return init_result;
@@ -68,6 +69,8 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(mdlib);
 
     const path = try std.fs.path.join(b.allocator, &.{ b.install_path, "lib/libmd" });
+    defer b.allocator.free(path);
+
     const options = b.addOptions();
     options.addOption([]const u8, "libmd_path", path);
 
@@ -81,7 +84,7 @@ pub fn build(b: *std.Build) !void {
     setupTarget(mdlib_tests);
     const run_mdlib_tests = b.addRunArtifact(mdlib_tests);
     const mdlib_tests_step = b.step("mdlib_tests", "Run mdlib tests");
-    mdlib_tests_step.dependOn(&mdlib.step);
+    mdlib_tests_step.dependOn(b.getInstallStep());
     mdlib_tests_step.dependOn(&run_mdlib_tests.step);
 
     const lib_unit_tests = b.addTest(.{

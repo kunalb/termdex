@@ -10,14 +10,14 @@ const VTabError = error{
 };
 
 const Module = struct {};
-
 const MODULE_REGISTRY = std.ArrayList(Module);
+const VTAB_REGISTRY = std.StringArrayHashMap(std.ArrayList).init(std.heap.c_allocator);
 
 const VirtualTable = struct {
     name: []u8,
     allocator: std.mem.Allocator,
 
-    pub fn init(allocator: std.mem.Allocator) !VirtualTable {
+    pub fn init(allocator: std.mem.Allocator) !*VirtualTable {
         _ = allocator;
     }
 
@@ -25,12 +25,12 @@ const VirtualTable = struct {
         _ = self;
     }
 
-    pub fn create(self: *VirtualTable, args: [][]u8) void {
+    pub fn connect(self: *VirtualTable, args: [][]u8) void {
         _ = self;
         _ = args;
     }
 
-    pub fn connect(self: *VirtualTable, args: [][]u8) void {
+    pub fn disconnect(self: *VirtualTable, args: [][]u8) void {
         _ = self;
         _ = args;
     }
@@ -38,20 +38,103 @@ const VirtualTable = struct {
     pub fn bestIndex() void {}
 };
 
-pub fn createModule(comptime T: type, db: anytype) !void {
+fn declsMap(comptime T: type) std.StaticStringMap(void) {
+    comptime {
+        const decls = @typeInfo(T).Struct.decls;
+        var kvs: [decls.len]struct { []const u8 } = undefined;
+        for (decls, 0..) |decl, i| {
+            kvs[i] = .{decl.name};
+        }
+        return std.StaticStringMap(void).initComptime(kvs);
+    }
+}
+
+fn createFn(comptime T: type) @TypeOf(vtabCreate) {
+    comptime {
+        if (@hasField(T, "eponymousOnly")) {
+            return null;
+        } else if (declsMap(T).has("create")) {
+            return altCreate(T);
+        } else {
+            return altConnect(T);
+        }
+    }
+}
+
+fn destroyFn(comptime T: type) @TypeOf(vtabDestroy) {
+    comptime {
+        if (declsMap(T).has("destroy")) {
+            return vtabDestroy;
+        } else {
+            return vtabDisconnect;
+        }
+    }
+}
+
+fn buildModule(comptime T: type) csql.sqlite3_module {
     checkProtocol(VirtualTable, T);
 
-    var vtab = try T.init(std.heap.c_allocator);
-    const result = csql.sqlite3_create_module(db, vtab.name.ptr, &vtabModule, &vtab);
+    return csql.sqlite3_module{
+        .iVersion = 0,
+        .xCreate = altConnect(T),
+        .xConnect = altConnect(T),
+        .xBestIndex = vtabBestIndex,
+        .xDisconnect = vtabDisconnect,
+        .xDestroy = destroyFn(T),
+        .xOpen = vtabOpen,
+        .xClose = vtabClose,
+        .xFilter = vtabFilter,
+        .xNext = vtabNext,
+        .xEof = vtabEof,
+        .xColumn = vtabColumn,
+        .xRowid = vtabRowid,
+        .xUpdate = @ptrFromInt(0),
+        .xBegin = @ptrFromInt(0),
+        .xSync = @ptrFromInt(0),
+        .xCommit = @ptrFromInt(0),
+        .xRollback = @ptrFromInt(0),
+        .xFindFunction = @ptrFromInt(0),
+        .xRename = @ptrFromInt(0),
+        .xSavepoint = @ptrFromInt(0),
+        .xRelease = @ptrFromInt(0),
+        .xRollbackTo = @ptrFromInt(0),
+        .xShadowName = @ptrFromInt(0),
+    };
+}
+
+pub fn createModule(comptime T: type, db: anytype, p_api: [*c]const csql.sqlite3_api_routines) !void {
+    const vtabModule = buildModule(T);
+    const vtab = try T.init(std.heap.c_allocator, p_api);
+
+    // TODO deallocate vtab with callback
+    const result = csql.sqlite3_create_module(db, vtab.name.ptr, &vtabModule, vtab);
     if (result != csql.SQLITE_OK) {
         std.debug.print("sqlite3_create_module failed with error code {}", .{result});
         return VTabError.CreateFailed;
     }
+    std.debug.print("sqlite3_create_module succeeded!\n", .{});
+}
+
+pub fn altCreate(comptime T: type) @TypeOf(vtabCreate) {
+    // std.debug.print("called altCreate for {s}", .{@typeName(T)});
+    return struct {
+        pub fn vtabCreate(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]csql.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
+            const vtab: *T = @ptrCast(@alignCast(aux));
+            std.debug.print("Called alt create's generated function! {s}", .{vtab.name});
+
+            _ = db;
+            _ = argc;
+            _ = argv;
+            _ = pp_vtab;
+            _ = pz_err;
+            return 0;
+        }
+    }.vtabCreate;
 }
 
 pub fn vtabCreate(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]csql.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
-    _ = db;
     _ = aux;
+    _ = db;
     _ = argc;
     _ = argv;
     _ = pp_vtab;
@@ -60,7 +143,27 @@ pub fn vtabCreate(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]c
     return 0;
 }
 
+pub fn altConnect(comptime T: type) @TypeOf(vtabConnect) {
+    // std.debug.print("called altCreate for {s}", .{@typeName(T)});
+    return struct {
+        pub fn vtabConnect(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]csql.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
+            const vtab: *T = @ptrCast(@alignCast(aux));
+            vtab.connect();
+            std.debug.print("Called alt connects generated function! {s}", .{vtab.name});
+
+            _ = db;
+            _ = argc;
+            _ = argv;
+            _ = pp_vtab;
+            _ = pz_err;
+            return 0;
+        }
+    }.vtabConnect;
+}
+
 pub fn vtabConnect(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]csql.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
+    std.debug.print(">> Called connect function!\n", .{});
+
     _ = db;
     _ = aux;
     _ = argc;
@@ -78,6 +181,11 @@ pub fn vtabBestIndex(arg_tab: [*c]csql.sqlite3_vtab, arg_pIdxInfo: [*c]csql.sqli
 }
 
 pub fn vtabDisconnect(p_vtab: [*c]csql.sqlite3_vtab) callconv(.C) c_int {
+    _ = p_vtab;
+    return 0;
+}
+
+pub fn vtabDestroy(p_vtab: [*c]csql.sqlite3_vtab) callconv(.C) c_int {
     _ = p_vtab;
     return 0;
 }
@@ -125,38 +233,11 @@ pub fn vtabFilter(p_vtab_cursor: [*c]csql.sqlite3_vtab_cursor, idx_num: c_int, i
     return 0;
 }
 
-const vtabModule = csql.sqlite3_module{
-    .iVersion = 0,
-    .xCreate = vtabCreate,
-    .xConnect = vtabConnect,
-    .xBestIndex = vtabBestIndex,
-    .xDisconnect = vtabDisconnect,
-    .xDestroy = vtabDisconnect,
-    .xOpen = vtabOpen,
-    .xClose = vtabClose,
-    .xFilter = vtabFilter,
-    .xNext = vtabNext,
-    .xEof = vtabEof,
-    .xColumn = vtabColumn,
-    .xRowid = vtabRowid,
-    .xUpdate = @ptrFromInt(0),
-    .xBegin = @ptrFromInt(0),
-    .xSync = @ptrFromInt(0),
-    .xCommit = @ptrFromInt(0),
-    .xRollback = @ptrFromInt(0),
-    .xFindFunction = @ptrFromInt(0),
-    .xRename = @ptrFromInt(0),
-    .xSavepoint = @ptrFromInt(0),
-    .xRelease = @ptrFromInt(0),
-    .xRollbackTo = @ptrFromInt(0),
-    .xShadowName = @ptrFromInt(0),
-};
-
 fn checkProtocol(comptime B: type, comptime T: type) void {
     comptime {
-        for (@typeInfo(B).Struct.fields) |expected_field| {
+        for (@typeInfo(B).Struct.decls) |expected_field| {
             var solved = false;
-            for (@typeInfo(T).Struct.fields) |actual_field| {
+            for (@typeInfo(T).Struct.decls) |actual_field| {
                 if (std.mem.eql(u8, expected_field.name, actual_field.name)) {
                     const expected_type = @TypeOf(expected_field);
                     const actual_type = @TypeOf(actual_field);
@@ -167,7 +248,8 @@ fn checkProtocol(comptime B: type, comptime T: type) void {
             }
 
             if (!solved) {
-                @compileLog("Could not resolve {}", .{expected_field});
+                @compileLog("Could not resolve: ", expected_field.name);
+                @compileError("Incomplete interface");
             }
         }
     }
