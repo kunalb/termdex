@@ -102,16 +102,18 @@ fn buildModule(comptime T: type) csql.sqlite3_module {
 }
 
 pub fn createModule(comptime T: type, db: anytype, p_api: [*c]const csql.sqlite3_api_routines) !void {
-    const vtabModule = buildModule(T);
+    const vtabModule = try std.heap.c_allocator.create(csql.sqlite3_module);
+    vtabModule.* = buildModule(T);
+
     const vtab = try T.init(std.heap.c_allocator, p_api);
 
     // TODO deallocate vtab with callback
-    const result = csql.sqlite3_create_module(db, vtab.name.ptr, &vtabModule, vtab);
+    const result = csql.sqlite3_create_module(db, vtab.name.ptr, vtabModule, vtab);
     if (result != csql.SQLITE_OK) {
         std.debug.print("sqlite3_create_module failed with error code {}", .{result});
         return VTabError.CreateFailed;
     }
-    std.debug.print("sqlite3_create_module succeeded!\n", .{});
+    std.debug.print("> sqlite3_create_module `{s}` succeeded!\n", .{vtab.name});
 }
 
 pub fn altCreate(comptime T: type) @TypeOf(vtabCreate) {
