@@ -294,7 +294,13 @@ EOF
 
 function journal {
     local path
-    path="$(date +%Y/%m/%d).md"
+    local date_cmd
+    if [[ "${1:-}" ]]; then
+      date_cmd="date -d $1"
+    else
+      date_cmd="date"
+    fi
+    path="$($date_cmd +%Y/%m/%d).md"
 
     local parent_dir
     parent_dir="$(dirname "$path")"
@@ -303,13 +309,13 @@ function journal {
     if [[ ! -f "$path" ]]; then
         cat <<EOF >"$path"
 ---
-title: $(date +%F)
+title: $($date_cmd +%F)
 ---
 EOF
     fi
 
     local related
-    related="$(mktemp "related-$(date +%F)-XXX.md")"
+    related="$(mktemp "related-$($date_cmd +%F)-XXX.md")"
 
     local location
     location=$(pwd)

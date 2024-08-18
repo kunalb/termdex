@@ -11,7 +11,6 @@ const VTabError = error{
 
 const Module = struct {};
 const MODULE_REGISTRY = std.ArrayList(Module);
-const VTAB_REGISTRY = std.StringArrayHashMap(std.ArrayList).init(std.heap.c_allocator);
 
 const VirtualTable = struct {
     name: []u8,
