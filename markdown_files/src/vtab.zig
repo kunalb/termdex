@@ -9,9 +9,6 @@ const VTabError = error{
     CreateFailed,
 };
 
-const Module = struct {};
-const MODULE_REGISTRY = std.ArrayList(Module);
-
 const VirtualTable = struct {
     name: []u8,
     allocator: std.mem.Allocator,
@@ -150,7 +147,7 @@ pub fn altConnect(comptime T: type) @TypeOf(vtabConnect) {
         pub fn vtabConnect(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]csql.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
             const vtab: *T = @ptrCast(@alignCast(aux));
             vtab.connect();
-            std.debug.print("Called alt connects generated function! {s}", .{vtab.name});
+            std.debug.print("Called alt connects generated function! {s}\n", .{vtab.name});
 
             _ = db;
             _ = argc;
