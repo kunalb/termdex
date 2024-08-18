@@ -19,6 +19,8 @@ pub fn toHTML(abs_path: []const u8, allocator: std.mem.Allocator) !?[]u8 {
 
 const NodesTable = struct {
     name: [:0]const u8 = "md_nodes",
+    eponymous_only: bool = false,
+
     allocator: std.mem.Allocator,
     api: [*c]const csql.sqlite3_api_routines,
 

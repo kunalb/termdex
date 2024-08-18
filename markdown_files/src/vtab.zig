@@ -15,6 +15,9 @@ const VirtualTable = struct {
     allocator: std.mem.Allocator,
     api: [*c]const csql.sqlite3_api_routines,
 
+    /// Set to true to skip generating a create function
+    eponymous_only: bool = false,
+
     pub fn init(allocator: std.mem.Allocator) !*VirtualTable {
         _ = allocator;
     }
@@ -49,7 +52,8 @@ fn declsMap(comptime T: type) std.StaticStringMap(void) {
 
 fn createFn(comptime T: type) @TypeOf(vtabCreate) {
     comptime {
-        if (@hasField(T, "eponymousOnly")) {
+        // TODO actually check the default value of this field
+        if (@hasField(T, "eponymous_only")) {
             return null;
         } else if (declsMap(T).has("create")) {
             return altCreate(T);
@@ -120,7 +124,7 @@ pub fn createModule(comptime T: type, db: anytype, p_api: [*c]const csql.sqlite3
     std.debug.print("> sqlite3_create_module `{s}` succeeded!\n", .{vtab.name});
 }
 
-pub fn altCreate(comptime T: type) @TypeOf(vtabCreate) {
+pub fn altCreate(comptime T: type) Create {
     // std.debug.print("called altCreate for {s}", .{@typeName(T)});
     return struct {
         pub fn vtabCreate(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]csql.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
@@ -137,6 +141,8 @@ pub fn altCreate(comptime T: type) @TypeOf(vtabCreate) {
     }.vtabCreate;
 }
 
+const Create: type = fn (?*csql.struct_sqlite3, ?*anyopaque, c_int, [*c]const [*c]const u8, [*c][*c]csql.struct_sqlite3_vtab, [*c][*c]u8) callconv(.C) c_int;
+
 pub fn vtabCreate(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]csql.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
     _ = aux;
     _ = db;
@@ -149,6 +155,7 @@ pub fn vtabCreate(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]c
 }
 
 pub fn altConnect(comptime T: type) @TypeOf(vtabConnect) {
+    @compileLog(@TypeOf(vtabCreate));
     // std.debug.print("called altCreate for {s}", .{@typeName(T)});
     return struct {
         pub fn vtabConnect(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]csql.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
