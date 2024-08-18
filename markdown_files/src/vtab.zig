@@ -9,9 +9,11 @@ const VTabError = error{
     CreateFailed,
 };
 
+/// Interface to build a virtual table in SQLite
 const VirtualTable = struct {
     name: []u8,
     allocator: std.mem.Allocator,
+    api: [*c]const csql.sqlite3_api_routines,
 
     pub fn init(allocator: std.mem.Allocator) !*VirtualTable {
         _ = allocator;
@@ -67,6 +69,10 @@ fn destroyFn(comptime T: type) @TypeOf(vtabDestroy) {
     }
 }
 
+/// Create a SQLite3 Module at Comptime
+/// Introspects on the contents of the vtab struct
+/// and generates functions to run the virtual table
+/// using generics.
 fn buildModule(comptime T: type) csql.sqlite3_module {
     checkProtocol(VirtualTable, T);
 
@@ -98,13 +104,14 @@ fn buildModule(comptime T: type) csql.sqlite3_module {
     };
 }
 
+/// Register a module with SQLite for the given VTab implementation
 pub fn createModule(comptime T: type, db: anytype, p_api: [*c]const csql.sqlite3_api_routines) !void {
     const vtabModule = try std.heap.c_allocator.create(csql.sqlite3_module);
     vtabModule.* = buildModule(T);
 
     const vtab = try T.init(std.heap.c_allocator, p_api);
 
-    // TODO deallocate vtab with callback
+    // TODO deallocate vtab with callback using v2
     const result = csql.sqlite3_create_module(db, vtab.name.ptr, vtabModule, vtab);
     if (result != csql.SQLITE_OK) {
         std.debug.print("sqlite3_create_module failed with error code {}", .{result});
@@ -233,9 +240,27 @@ pub fn vtabFilter(p_vtab_cursor: [*c]csql.sqlite3_vtab_cursor, idx_num: c_int, i
 
 fn checkProtocol(comptime B: type, comptime T: type) void {
     comptime {
-        for (@typeInfo(B).Struct.decls) |expected_field| {
+        for (@typeInfo(B).Struct.decls) |expected_decl| {
             var solved = false;
-            for (@typeInfo(T).Struct.decls) |actual_field| {
+            for (@typeInfo(T).Struct.decls) |actual_decl| {
+                if (std.mem.eql(u8, expected_decl.name, actual_decl.name)) {
+                    const expected_type = @TypeOf(expected_decl);
+                    const actual_type = @TypeOf(actual_decl);
+                    std.debug.assert(expected_type == actual_type);
+                    solved = true;
+                    break;
+                }
+            }
+
+            if (!solved) {
+                @compileLog("Could not resolve: ", expected_decl.name);
+                @compileError("Incomplete interface");
+            }
+        }
+
+        for (@typeInfo(B).Struct.fields) |expected_field| {
+            var solved = false;
+            for (@typeInfo(T).Struct.fields) |actual_field| {
                 if (std.mem.eql(u8, expected_field.name, actual_field.name)) {
                     const expected_type = @TypeOf(expected_field);
                     const actual_type = @TypeOf(actual_field);
