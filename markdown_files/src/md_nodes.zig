@@ -55,18 +55,8 @@ const NodesTable = struct {
     }
 };
 
-pub fn initModule(
-    db: *csql.sqlite3,
-    pz_err_msg: [*c][*c]u8,
-    p_api: [*c]const csql.sqlite3_api_routines,
-) callconv(.C) c_int {
-    _ = pz_err_msg;
-    vtab.createModule(NodesTable, db, p_api) catch |err| {
-        std.debug.print("{?}", .{err});
-        return -1;
-    };
-
-    return 0;
+pub fn initModule(args: vtab.CreateModuleArgs) !void {
+    return vtab.createModule(NodesTable, args);
 }
 
 // TODO: Move this out

@@ -7,16 +7,21 @@ const lib_name = @import("build_options").lib_name;
 
 // Public api
 
+pub const CreateModuleArgs = struct {
+    db: *csql.sqlite3,
+    pz_err_msg: [*c][*c]u8,
+    p_api: [*c]const csql.sqlite3_api_routines,
+};
+
 /// Register a module with SQLite for the given VTab implementation
-pub fn createModule(comptime T: type, db: *csql.sqlite3, p_api: [*c]const csql.sqlite3_api_routines) !void {
-    // TODO Confirm mechanism to allocate and use a struct in zig
+pub fn createModule(comptime T: type, args: CreateModuleArgs) !void {
     const vtabModule = try std.heap.c_allocator.create(csql.sqlite3_module);
     vtabModule.* = buildModule(T);
 
-    const vtab = try T.init(std.heap.c_allocator, p_api);
+    const vtab = try T.init(std.heap.c_allocator, args.p_api);
 
     // TODO deallocate vtab with callback using v2
-    const result = csql.sqlite3_create_module(db, vtab.name.ptr, vtabModule, vtab);
+    const result = csql.sqlite3_create_module(args.db, vtab.name.ptr, vtabModule, vtab);
     if (result != csql.SQLITE_OK) {
         std.debug.print("sqlite3_create_module failed with error code {}", .{result});
         return VTabError.CreateFailed;
@@ -31,6 +36,7 @@ pub const VTabError = error{
 };
 
 /// Interface to build a virtual table in SQLite
+/// TODO Actually fill this in
 const VirtualTable = struct {
     name: []u8,
     allocator: std.mem.Allocator,
