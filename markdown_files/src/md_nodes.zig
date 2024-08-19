@@ -30,8 +30,8 @@ const NodesTable = struct {
         return ptr;
     }
 
-    pub fn deinit(self: *NodesTable) void {
-        _ = self;
+    pub fn deinit(self: *NodesTable) !void {
+        try self.allocator.free(self);
     }
 
     pub fn create(self: *NodesTable, args: [][]u8) void {
@@ -40,7 +40,7 @@ const NodesTable = struct {
     }
 
     pub fn connect(self: *NodesTable) void {
-        std.debug.print("Called NodesTable.connect", .{});
+        std.debug.print("> Called NodesTable.connect\n", .{});
         _ = self;
     }
 

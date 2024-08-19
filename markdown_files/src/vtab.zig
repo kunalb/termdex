@@ -2,9 +2,30 @@ const std = @import("std");
 pub const csql = @cImport({
     @cInclude("sqlite3ext.h");
 });
+const log = std.log.scoped(.vtab);
 const lib_name = @import("build_options").lib_name;
 
-const VTabError = error{
+// Public api
+
+/// Register a module with SQLite for the given VTab implementation
+pub fn createModule(comptime T: type, db: *csql.sqlite3, p_api: [*c]const csql.sqlite3_api_routines) !void {
+    // TODO Confirm mechanism to allocate and use a struct in zig
+    const vtabModule = try std.heap.c_allocator.create(csql.sqlite3_module);
+    vtabModule.* = buildModule(T);
+
+    const vtab = try T.init(std.heap.c_allocator, p_api);
+
+    // TODO deallocate vtab with callback using v2
+    const result = csql.sqlite3_create_module(db, vtab.name.ptr, vtabModule, vtab);
+    if (result != csql.SQLITE_OK) {
+        std.debug.print("sqlite3_create_module failed with error code {}", .{result});
+        return VTabError.CreateFailed;
+    }
+    log.debug("sqlite3_create_module `{s}` succeeded!", .{vtab.name});
+}
+
+/// Types of errors, can be thrown
+pub const VTabError = error{
     InitFailed,
     CreateFailed,
 };
@@ -39,16 +60,7 @@ const VirtualTable = struct {
     pub fn bestIndex() void {}
 };
 
-fn declsMap(comptime T: type) std.StaticStringMap(void) {
-    comptime {
-        const decls = @typeInfo(T).Struct.decls;
-        var kvs: [decls.len]struct { []const u8 } = undefined;
-        for (decls, 0..) |decl, i| {
-            kvs[i] = .{decl.name};
-        }
-        return std.StaticStringMap(void).initComptime(kvs);
-    }
-}
+// C-bridge and code generation
 
 fn createFn(comptime T: type) @TypeOf(vtabCreate) {
     comptime {
@@ -58,7 +70,7 @@ fn createFn(comptime T: type) @TypeOf(vtabCreate) {
         } else if (declsMap(T).has("create")) {
             return altCreate(T);
         } else {
-            return altConnect(T);
+            return buildConnectFn(T);
         }
     }
 }
@@ -73,6 +85,23 @@ fn destroyFn(comptime T: type) @TypeOf(vtabDestroy) {
     }
 }
 
+fn buildConnectFn(comptime T: type) VTabConnectFn {
+    return struct {
+        pub fn vtabConnect(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]csql.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
+            const vtab: *T = @ptrCast(@alignCast(aux));
+            vtab.connect();
+            std.debug.print("Called alt connects generated function! {s}\n", .{vtab.name});
+
+            _ = db;
+            _ = argc;
+            _ = argv;
+            _ = pp_vtab;
+            _ = pz_err;
+            return 0;
+        }
+    }.vtabConnect;
+}
+
 /// Create a SQLite3 Module at Comptime
 /// Introspects on the contents of the vtab struct
 /// and generates functions to run the virtual table
@@ -82,8 +111,8 @@ fn buildModule(comptime T: type) csql.sqlite3_module {
 
     return csql.sqlite3_module{
         .iVersion = 0,
-        .xCreate = altConnect(T),
-        .xConnect = altConnect(T),
+        .xCreate = null,
+        .xConnect = buildConnectFn(T),
         .xBestIndex = vtabBestIndex,
         .xDisconnect = vtabDisconnect,
         .xDestroy = destroyFn(T),
@@ -108,23 +137,7 @@ fn buildModule(comptime T: type) csql.sqlite3_module {
     };
 }
 
-/// Register a module with SQLite for the given VTab implementation
-pub fn createModule(comptime T: type, db: anytype, p_api: [*c]const csql.sqlite3_api_routines) !void {
-    const vtabModule = try std.heap.c_allocator.create(csql.sqlite3_module);
-    vtabModule.* = buildModule(T);
-
-    const vtab = try T.init(std.heap.c_allocator, p_api);
-
-    // TODO deallocate vtab with callback using v2
-    const result = csql.sqlite3_create_module(db, vtab.name.ptr, vtabModule, vtab);
-    if (result != csql.SQLITE_OK) {
-        std.debug.print("sqlite3_create_module failed with error code {}", .{result});
-        return VTabError.CreateFailed;
-    }
-    std.debug.print("> sqlite3_create_module `{s}` succeeded!\n", .{vtab.name});
-}
-
-pub fn altCreate(comptime T: type) Create {
+pub fn altCreate(comptime T: type) VTabConnectFn {
     // std.debug.print("called altCreate for {s}", .{@typeName(T)});
     return struct {
         pub fn vtabCreate(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]csql.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
@@ -141,7 +154,7 @@ pub fn altCreate(comptime T: type) Create {
     }.vtabCreate;
 }
 
-const Create: type = fn (?*csql.struct_sqlite3, ?*anyopaque, c_int, [*c]const [*c]const u8, [*c][*c]csql.struct_sqlite3_vtab, [*c][*c]u8) callconv(.C) c_int;
+const VTabConnectFn: type = fn (?*csql.struct_sqlite3, ?*anyopaque, c_int, [*c]const [*c]const u8, [*c][*c]csql.struct_sqlite3_vtab, [*c][*c]u8) callconv(.C) c_int;
 
 pub fn vtabCreate(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]csql.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
     _ = aux;
@@ -152,25 +165,6 @@ pub fn vtabCreate(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]c
     _ = pz_err;
 
     return 0;
-}
-
-pub fn altConnect(comptime T: type) @TypeOf(vtabConnect) {
-    @compileLog(@TypeOf(vtabCreate));
-    // std.debug.print("called altCreate for {s}", .{@typeName(T)});
-    return struct {
-        pub fn vtabConnect(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]csql.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
-            const vtab: *T = @ptrCast(@alignCast(aux));
-            vtab.connect();
-            std.debug.print("Called alt connects generated function! {s}\n", .{vtab.name});
-
-            _ = db;
-            _ = argc;
-            _ = argv;
-            _ = pp_vtab;
-            _ = pz_err;
-            return 0;
-        }
-    }.vtabConnect;
 }
 
 pub fn vtabConnect(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]csql.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
@@ -245,6 +239,8 @@ pub fn vtabFilter(p_vtab_cursor: [*c]csql.sqlite3_vtab_cursor, idx_num: c_int, i
     return 0;
 }
 
+// Comptime utilities
+
 fn checkProtocol(comptime B: type, comptime T: type) void {
     comptime {
         for (@typeInfo(B).Struct.decls) |expected_decl| {
@@ -265,6 +261,7 @@ fn checkProtocol(comptime B: type, comptime T: type) void {
             }
         }
 
+        // Actually test function types too
         for (@typeInfo(B).Struct.fields) |expected_field| {
             var solved = false;
             for (@typeInfo(T).Struct.fields) |actual_field| {
@@ -282,5 +279,16 @@ fn checkProtocol(comptime B: type, comptime T: type) void {
                 @compileError("Incomplete interface");
             }
         }
+    }
+}
+
+fn declsMap(comptime T: type) std.StaticStringMap(void) {
+    comptime {
+        const decls = @typeInfo(T).Struct.decls;
+        var kvs: [decls.len]struct { []const u8 } = undefined;
+        for (decls, 0..) |decl, i| {
+            kvs[i] = .{decl.name};
+        }
+        return std.StaticStringMap(void).initComptime(kvs);
     }
 }

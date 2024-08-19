@@ -1,17 +1,24 @@
 const std = @import("std");
+const log = std.log.scoped(.build);
 
 fn addInitModule(b: *std.Build, lib: *std.Build.Step.Compile) !void {
     const gen = b.addWriteFiles();
 
+    // TODO Refactor this to make a more ergonomic initModule function
+    // that can throw errors, and hides the C types inside a struct
+    // TODO understand the cost of having intermediate stack structs
+    // TODO understand const behavior for nesting
+    // TODO name function more cleanly, can this be removed entirely and done statically?
     const contents =
         \\const root = @import("root");
+        \\const log = @import("std").log.scoped(.gen);
         \\
         \\export fn sqlite3_{s}_init(
         \\    db: *root.csql.sqlite3,
         \\    pz_err_msg: [*c][*c]u8,
         \\    p_api: [*c]const root.csql.sqlite3_api_routines,
         \\) callconv(.C) c_int {{
-        \\    @import("std").debug.print("\n> Initialized sqlite3\n", .{{}});
+        \\    log.debug("Initialized sqlite3", .{{}});
         \\    const init_result = root.csql.sqlite3_initialize();
         \\    if (init_result != root.csql.SQLITE_OK) {{
         \\        return init_result;
@@ -83,8 +90,8 @@ pub fn build(b: *std.Build) !void {
     mdlib_tests.root_module.addOptions("build_paths", options);
     setupTarget(mdlib_tests);
     const run_mdlib_tests = b.addRunArtifact(mdlib_tests);
+    run_mdlib_tests.step.dependOn(b.getInstallStep());
     const mdlib_tests_step = b.step("mdlib_tests", "Run mdlib tests");
-    mdlib_tests_step.dependOn(b.getInstallStep());
     mdlib_tests_step.dependOn(&run_mdlib_tests.step);
 
     const lib_unit_tests = b.addTest(.{
