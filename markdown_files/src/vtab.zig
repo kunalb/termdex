@@ -13,8 +13,14 @@ pub const CreateModuleArgs = struct {
     p_api: [*c]const csql.sqlite3_api_routines,
 };
 
+pub const ConnectArgs: type = struct {
+    db: *csql.sqlite3,
+    args: []const [:0]const u8,
+};
+
 /// Register a module with SQLite for the given VTab implementation
 pub fn createModule(comptime T: type, args: CreateModuleArgs) !void {
+    // TODO Change the allocator used here
     const vtabModule = try std.heap.c_allocator.create(csql.sqlite3_module);
     vtabModule.* = buildModule(T);
 
@@ -45,6 +51,7 @@ const VirtualTable = struct {
     /// Set to true to skip generating a create function
     eponymous_only: bool = false,
 
+    // TODO Rename this to create and use init to set up values instead
     pub fn init(allocator: std.mem.Allocator) !*VirtualTable {
         _ = allocator;
     }
@@ -95,12 +102,10 @@ fn buildConnectFn(comptime T: type) VTabConnectFn {
     return struct {
         pub fn vtabConnect(db: ?*csql.sqlite3, aux: ?*anyopaque, argc: c_int, argv: [*c]const [*c]const u8, pp_vtab: [*c][*c]csql.sqlite3_vtab, pz_err: [*c][*c]u8) callconv(.C) c_int {
             const vtab: *T = @ptrCast(@alignCast(aux));
-            vtab.connect();
-            std.debug.print("Called alt connects generated function! {s}\n", .{vtab.name});
+            const args: [*]const [:0]const u8 = @ptrCast(argv);
+            vtab.connect(args[0..@intCast(argc)]);
 
             _ = db;
-            _ = argc;
-            _ = argv;
             _ = pp_vtab;
             _ = pz_err;
             return 0;

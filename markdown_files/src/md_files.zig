@@ -1,5 +1,6 @@
 const std = @import("std");
 const frontMatter = @import("front_matter.zig");
+const html = @import("html.zig");
 // const contents = @import("contents.zig");
 
 const c = @cImport({
@@ -281,27 +282,24 @@ fn mdFrontMatterFunc(ctx: ?*c.sqlite3_context, argc: c_int, pp_value: [*c]?*c.sq
 }
 
 fn mdToHTMLFunc(ctx: ?*c.sqlite3_context, argc: c_int, pp_value: [*c]?*c.sqlite3_value) callconv(.C) void {
-    _ = argc;
-    _ = pp_value;
-    sqlite3_api.*.result_null.?(ctx);
-    //    std.debug.assert(argc == 1);
-    //    const abs_path: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[0])));
-    //    const val = contents.toHTML(std.mem.span(abs_path), c_allocator) catch |err| {
-    //        const err_msg = std.fmt.allocPrint(c_allocator, "{?}", .{err}) catch {
-    //            sqlite3_api.*.result_error.?(ctx, "Ran out of memory while trying to report error!", -1);
-    //            return;
-    //        };
+    std.debug.assert(argc == 1);
+    const abs_path: [*:0]const u8 = @ptrCast(@alignCast(c.sqlite3_value_text(pp_value[0])));
+    const val = html.toHTML(std.mem.span(abs_path), c_allocator) catch |err| {
+        const err_msg = std.fmt.allocPrint(c_allocator, "{?}", .{err}) catch {
+            sqlite3_api.*.result_error.?(ctx, "Ran out of memory while trying to report error!", -1);
+            return;
+        };
 
-    //        defer c_allocator.free(err_msg);
-    //        sqlite3_api.*.result_error.?(ctx, err_msg.ptr, @intCast(err_msg.len));
-    //        return;
-    //    };
+        defer c_allocator.free(err_msg);
+        sqlite3_api.*.result_error.?(ctx, err_msg.ptr, @intCast(err_msg.len));
+        return;
+    };
 
-    //    if (val == null) {
-    //        sqlite3_api.*.result_null.?(ctx);
-    //    } else {
-    //        sqlite3_api.*.result_text.?(ctx, val.?.ptr, @intCast(val.?.len), null);
-    //    }
+    if (val == null) {
+        sqlite3_api.*.result_null.?(ctx);
+    } else {
+        sqlite3_api.*.result_text.?(ctx, val.?.ptr, @intCast(val.?.len), null);
+    }
 }
 
 export fn sqlite3_mdfiles_init(
