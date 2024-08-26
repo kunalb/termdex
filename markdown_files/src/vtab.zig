@@ -75,19 +75,6 @@ const VirtualTable = struct {
 
 // C-bridge and code generation
 
-fn createFn(comptime T: type) @TypeOf(vtabCreate) {
-    comptime {
-        // TODO actually check the default value of this field
-        if (@hasField(T, "eponymous_only")) {
-            return null;
-        } else if (declsMap(T).has("create")) {
-            return altCreate(T);
-        } else {
-            return buildConnectFn(T);
-        }
-    }
-}
-
 fn destroyFn(comptime T: type) @TypeOf(vtabDestroy) {
     comptime {
         if (declsMap(T).has("destroy")) {

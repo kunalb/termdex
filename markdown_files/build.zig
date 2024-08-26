@@ -84,7 +84,6 @@ pub fn build(b: *std.Build) !void {
 
     const options = b.addOptions();
     options.addOption([]const u8, "libmd_path", path);
-
     const mdlib_tests = b.addTest(.{
         .root_source_file = b.path("tests/md_nodes_test.zig"),
         .target = target,

@@ -14,7 +14,7 @@ fi
 ########################################################################
 CUR_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 readonly CUR_DIR
-readonly TDX_MDF="${TDX_MDF:-"$CUR_DIR/markdown_files/zig-out/lib/libmarkdown_files.so"}"
+readonly TDX_MDF="${TDX_MDF:-"$CUR_DIR/markdown_files/zig-out/lib/libmd_files.so"}"
 export BAT_THEME="${BAT_THEME:-base16}"
 readonly BAT_THEME
 export SELF="$0"
