@@ -352,16 +352,15 @@ function notify {
     local title="$1"
     local summary="$2"
 
-    local ns
     if ! which notify-send; then
 	return
     fi
 
-    "$ns" --app-name "tdx" \
-	  -u "normal" \
-	  --action="action1=Focus Window" \
-	  "$title" \
-	  "$summary"
+    notify-send --app-name "tdx" \
+          -u "normal" \
+          --action="action1=Focus Window" \
+          "$title" \
+          "$summary"
 }
 
 function pomodoro {
@@ -484,7 +483,7 @@ function tasks {
 
 
     (
-     printf "<path> === %-20s ===\n" "active"
+     printf "<path> === %-20s ===\n" "in progress"
     active_query="$(cat <<EOF
 SELECT
   printf('%-28s', substr(path, length('$location') + 2)),
@@ -495,7 +494,7 @@ SELECT
   md_front_matter(path, 'tags')
 FROM md_files
 WHERE
-  md_front_matter(path, 'status') = 'active'
+  md_front_matter(path, 'status') IN ('active')
   AND basename LIKE '%.md'
   AND path NOT LIKE '%.git%'
   AND COALESCE(md_front_matter(path, 'status'), 'unset') != 'done'
