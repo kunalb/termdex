@@ -568,7 +568,7 @@ EOF
 }
 
 function ripgrep {
-  RG_PREFIX="rg --column --line-number --no-heading --color=always --smart-case "
+  RG_PREFIX="rg --column --line-number --no-heading --color=always --smart-case --sort path"
   INITIAL_QUERY="${*:-}"
   # shellcheck disable=SC2016
   fzf --ansi --disabled --query "$INITIAL_QUERY" \
