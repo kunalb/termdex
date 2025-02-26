@@ -2,9 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sqlite3.h>
+#include <unistd.h> // For getcwd()
 
-static int callback(void *NotUsed, int argc, char **argv, char **azColName) {
-    NotUsed = 0;
+static int callback(void *data, int argc, char **argv, char **azColName) {
+    (void)data; // Unused parameter
     
     for (int i = 0; i < argc; i++) {
         printf("%s = %s\n", azColName[i], argv[i] ? argv[i] : "NULL");
@@ -13,7 +14,7 @@ static int callback(void *NotUsed, int argc, char **argv, char **azColName) {
     return 0;
 }
 
-int main(int argc, char* argv[]) {
+int main(void) { // No command line arguments used
     sqlite3 *db;
     char *zErrMsg = 0;
     int rc;
@@ -35,9 +36,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    // Create virtual table to current directory
+    // Create virtual table without arguments to use current directory
     rc = sqlite3_exec(db, 
-                    "CREATE VIRTUAL TABLE test_files USING md_files('.');", 
+                    "CREATE VIRTUAL TABLE test_files USING md_files();", 
                     callback, 0, &zErrMsg);
     if (rc != SQLITE_OK) {
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
@@ -50,6 +51,37 @@ int main(int argc, char* argv[]) {
     printf("Listing files:\n");
     rc = sqlite3_exec(db, "SELECT path, basename, size_bytes FROM test_files;", 
                      callback, 0, &zErrMsg);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL error: %s\n", zErrMsg);
+        sqlite3_free(zErrMsg);
+        sqlite3_close(db);
+        return 1;
+    }
+    
+    // Test front matter extraction if example.md exists
+    printf("\nFront matter test:\n");
+    rc = sqlite3_exec(db, 
+        "SELECT "
+        "md_front_matter(path, 'title') as title, "
+        "md_front_matter(path, 'author') as author, "
+        "md_front_matter(path, 'date') as date, "
+        "md_front_matter(path, 'tags') as tags "
+        "FROM test_files WHERE basename = 'test_example.md';", 
+        callback, 0, &zErrMsg);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL error: %s\n", zErrMsg);
+        sqlite3_free(zErrMsg);
+        sqlite3_close(db);
+        return 1;
+    }
+    
+    // Test HTML conversion if example.md exists
+    printf("\nHTML conversion test:\n");
+    rc = sqlite3_exec(db, 
+        "SELECT basename, "
+        "substr(md_html(path), 1, 50) || '...' as html_preview "
+        "FROM test_files WHERE basename = 'test_example.md';", 
+        callback, 0, &zErrMsg);
     if (rc != SQLITE_OK) {
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);

@@ -1,5 +1,5 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -fPIC -std=c11 -O2
+CC = clang
+CFLAGS = -Wall -Wextra -fPIC -std=c2x -O2
 LIBS = -lsqlite3 -lyaml -lcmark-gfm
 TARGET = libmd_files.so
 

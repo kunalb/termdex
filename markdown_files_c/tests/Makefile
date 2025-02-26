@@ -1,5 +1,5 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -g
+CC = clang
+CFLAGS = -Wall -Wextra -g -std=c2x
 LIBS = -lsqlite3
 TARGET = test_extension
 

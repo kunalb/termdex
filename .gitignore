@@ -3,3 +3,37 @@ termdex
 .#*
 .gdb_history
 TAGS
+
+# Build artifacts
+*.o
+*.so
+*.dll
+*.dylib
+*.a
+*.obj
+*.exe
+test_extension
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Dependency directories
+node_modules/
+package-lock.json
+
+# Zig build directories
+zig-cache/
+zig-out/
+
+# C and C++ build artifacts
+build/
+cmake-build-*/
+
+# Ignore temporary files
+*.tmp
+*.log

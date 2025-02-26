@@ -11,9 +11,12 @@ SQLITE_EXTENSION_INIT1
 #include <time.h>
 #include <errno.h>
 #include <stdbool.h>
-#include <libgen.h>
 #include <limits.h>
 #include <unistd.h>
+#include <libgen.h>
+
+// On some systems, realpath might need explicit declaration
+extern char *realpath(const char *restrict path, char *restrict resolved_path);
 
 // ---------------------------------------------------------------------------
 // Virtual Table Implementation
@@ -59,13 +62,54 @@ static int vtabConnect(sqlite3 *db, void *aux, int argc, const char *const *argv
     return rc;
   }
   
-  char real_path[PATH_MAX];
+  char real_path[4096]; // Use fixed size instead of PATH_MAX
+  char tmp_path[4096];
+
   if (argc == 4) {
-    if (realpath(argv[3], real_path) == NULL) {
-      *pz_err = sqlite3_mprintf("Couldn't resolve directory! `%s`", argv[3]);
-      sqlite3_free(new_vtab);
-      return SQLITE_ERROR;
+    const char *path_arg = argv[3];
+    
+    // Convert relative paths to absolute paths
+    if (path_arg[0] != '/') {
+      // For relative paths like '.' or './', get current directory first
+      if (getcwd(tmp_path, sizeof(tmp_path)) == NULL) {
+        *pz_err = sqlite3_mprintf("Could not determine current working directory!");
+        sqlite3_free(new_vtab);
+        return SQLITE_ERROR;
+      }
+      
+      // If it's just "." or "./", use the current directory path directly
+      if (strcmp(path_arg, ".") == 0 || strcmp(path_arg, "./") == 0) {
+        strncpy(real_path, tmp_path, sizeof(real_path) - 1);
+        real_path[sizeof(real_path) - 1] = '\0';
+      } else {
+        // For other relative paths, construct an absolute path
+        size_t tmp_len = strlen(tmp_path);
+        
+        // Check if we need a separator
+        if (tmp_path[tmp_len-1] != '/' && path_arg[0] != '/') {
+          snprintf(real_path, sizeof(real_path), "%s/%s", tmp_path, path_arg);
+        } else {
+          snprintf(real_path, sizeof(real_path), "%s%s", tmp_path, path_arg);
+        }
+        
+        // Verify the directory exists
+        struct stat st;
+        if (stat(real_path, &st) != 0 || !S_ISDIR(st.st_mode)) {
+          *pz_err = sqlite3_mprintf("Directory does not exist: `%s`", real_path);
+          sqlite3_free(new_vtab);
+          return SQLITE_ERROR;
+        }
+      }
+    } else {
+      // For absolute paths, use realpath directly
+      if (realpath(path_arg, real_path) == NULL) {
+        *pz_err = sqlite3_mprintf("Couldn't resolve directory! `%s`", path_arg);
+        sqlite3_free(new_vtab);
+        return SQLITE_ERROR;
+      }
     }
+    
+    // Allocate and copy the resolved path
     new_vtab->root_dir = sqlite3_malloc(strlen(real_path) + 1);
     if (!new_vtab->root_dir) {
       sqlite3_free(new_vtab);
@@ -73,7 +117,8 @@ static int vtabConnect(sqlite3 *db, void *aux, int argc, const char *const *argv
     }
     strcpy(new_vtab->root_dir, real_path);
   } else {
-    if (getcwd(real_path, PATH_MAX) == NULL) {
+    // No path provided, use current directory
+    if (getcwd(real_path, sizeof(real_path)) == NULL) {
       *pz_err = sqlite3_mprintf("Could not determine current working directory!");
       sqlite3_free(new_vtab);
       return SQLITE_ERROR;
@@ -97,12 +142,7 @@ static int vtabDisconnect(sqlite3_vtab *p_vtab) {
   return SQLITE_OK;
 }
 
-// Directory traversal functions
-static bool is_directory(const char *path) {
-  struct stat statbuf;
-  if (stat(path, &statbuf) != 0) return false;
-  return S_ISDIR(statbuf.st_mode);
-}
+// Path manipulation function
 
 static char* path_join(const char *dir, const char *file) {
   size_t dir_len = strlen(dir);
@@ -123,7 +163,6 @@ static char* get_next_file(CursorState *state) {
   if (!state->dir) return NULL;
   
   struct dirent *entry;
-  char *full_path = NULL;
   
   while ((entry = readdir(state->dir)) != NULL) {
     // Skip . and ..
@@ -134,36 +173,9 @@ static char* get_next_file(CursorState *state) {
     char *path = path_join(state->path, entry->d_name);
     if (!path) return NULL;
     
-    // Check if it's a directory 
-    if (is_directory(path)) {
-      // Process subdirectory - recursively
-      DIR *subdir = opendir(path);
-      if (subdir) {
-        // Save current state
-        DIR *old_dir = state->dir;
-        char *old_path = state->path;
-        
-        // Set new state
-        state->dir = subdir;
-        state->path = path;
-        
-        // Get next file from subdirectory
-        char *subfile = get_next_file(state);
-        
-        if (subfile) {
-          // Found a file in subdirectory
-          return subfile;
-        } else {
-          // No files in subdirectory, restore state
-          closedir(subdir);
-          state->dir = old_dir;
-          state->path = old_path;
-          sqlite3_free(path);
-        }
-      } else {
-        sqlite3_free(path);
-      }
-    } else {
+    // Check if it's a regular file (not directory)
+    struct stat stat_buf;
+    if (stat(path, &stat_buf) == 0 && S_ISREG(stat_buf.st_mode)) {
       // Found a regular file
       free(state->entry);
       
@@ -177,6 +189,9 @@ static char* get_next_file(CursorState *state) {
       state->has_stat = false;
       return path;
     }
+    
+    // Not a regular file, skip it
+    sqlite3_free(path);
   }
   
   // No more files
@@ -253,26 +268,54 @@ static int vtabNext(sqlite3_vtab_cursor *p_cur_base) {
   
   state->has_stat = false;
   
-  // Get current directory
-  DIR *current_dir = state->dir;
-  char *current_path = state->path;
-  
-  // Free current path
-  char *dir_path = strdup(dirname(current_path));
-  if (!dir_path) return SQLITE_NOMEM;
-  
-  sqlite3_free(state->path);
-  state->path = NULL;
-  
-  // Initialize with parent directory state
-  state->dir = opendir(dir_path);
-  state->path = dir_path;
-  
-  // Get next file
-  char *file_path = get_next_file(state);
-  if (file_path) {
-    sqlite3_free(state->path);
-    state->path = file_path;
+  // Get the next file from the current directory
+  if (state->dir != NULL) {
+    struct dirent *entry;
+    bool found_file = false;
+    
+    while ((entry = readdir(state->dir)) != NULL) {
+      // Skip . and ..
+      if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+        continue;
+        
+      // Get the full path
+      char *path = path_join(state->path, entry->d_name);
+      if (!path) continue;
+      
+      // Keep only regular files (not directories)
+      struct stat stat_buf;
+      if (stat(path, &stat_buf) == 0 && S_ISREG(stat_buf.st_mode)) {
+        // Save entry and path
+        if (state->entry) free(state->entry);
+        
+        state->entry = malloc(sizeof(struct dirent));
+        if (!state->entry) {
+          sqlite3_free(path);
+          continue;
+        }
+        
+        memcpy(state->entry, entry, sizeof(struct dirent));
+        
+        if (state->path) sqlite3_free(state->path);
+        state->path = path;
+        state->has_stat = false;
+        found_file = true;
+        break;
+      }
+      
+      sqlite3_free(path);
+    }
+    
+    if (!found_file) {
+      // No more files in this directory
+      if (state->path) {
+        sqlite3_free(state->path);
+        state->path = NULL;
+      }
+      
+      closedir(state->dir);
+      state->dir = NULL;
+    }
   }
   
   return SQLITE_OK;
@@ -287,8 +330,8 @@ static int vtabColumn(sqlite3_vtab_cursor *p_cur, sqlite3_context *ctx, int i) {
     return SQLITE_OK;
   }
   
-  VTab *tab = (VTab*)cur->base.pVtab;
-  const char *basename = state->entry ? state->entry->d_name : NULL;
+  // Removed unused tab variable
+  const char *basename_str = state->entry ? state->entry->d_name : NULL;
   
   // Get file stat if needed
   if (i >= 2 && !state->has_stat) {
@@ -307,10 +350,20 @@ static int vtabColumn(sqlite3_vtab_cursor *p_cur, sqlite3_context *ctx, int i) {
       sqlite3_result_text(ctx, state->path, -1, SQLITE_TRANSIENT);
       break;
     case 1: // basename
-      if (basename)
-        sqlite3_result_text(ctx, basename, -1, SQLITE_TRANSIENT);
-      else
-        sqlite3_result_text(ctx, basename(state->path), -1, SQLITE_TRANSIENT);
+      if (basename_str) {
+        sqlite3_result_text(ctx, basename_str, -1, SQLITE_TRANSIENT);
+      } else {
+        // Get the basename from the path
+        char *path_copy = strdup(state->path);
+        if (!path_copy) {
+          sqlite3_result_error(ctx, "Out of memory", -1);
+          return SQLITE_NOMEM;
+        }
+        
+        char *base = basename(path_copy);
+        sqlite3_result_text(ctx, base, -1, SQLITE_TRANSIENT);
+        free(path_copy);
+      }
       break;
     case 2: // size_bytes
       sqlite3_result_int64(ctx, state->stat_buf.st_size);
@@ -560,28 +613,71 @@ static void md_to_html_func(sqlite3_context *ctx, int argc, sqlite3_value **pp_v
     return;
   }
   
-  // Get file size
-  fseek(file, 0, SEEK_END);
-  long file_size = ftell(file);
-  fseek(file, 0, SEEK_SET);
+  // Process markdown to extract content excluding front matter
+  char line[4096];
+  char *content = NULL;
+  size_t content_len = 0;
+  bool in_front_matter = false;
+  bool frontmatter_done = false;
   
-  // Allocate buffer
-  char *contents = malloc(file_size + 1);
-  if (!contents) {
-    fclose(file);
-    sqlite3_result_error(ctx, "Out of memory", -1);
+  // Read file line by line to skip front matter
+  while (fgets(line, sizeof(line), file)) {
+    size_t line_len = strlen(line);
+    
+    // Check if we're in front matter
+    if (!frontmatter_done && line_len >= 3 && strncmp(line, "---", 3) == 0) {
+      if (!in_front_matter) {
+        // Start of front matter
+        in_front_matter = true;
+        continue;
+      } else {
+        // End of front matter
+        in_front_matter = false;
+        frontmatter_done = true;
+        continue;
+      }
+    }
+    
+    // Skip lines in front matter
+    if (in_front_matter) {
+      continue;
+    }
+    
+    // Add line to content
+    if (content == NULL) {
+      content = malloc(line_len + 1);
+      if (!content) {
+        fclose(file);
+        sqlite3_result_error(ctx, "Out of memory", -1);
+        return;
+      }
+      strcpy(content, line);
+      content_len = line_len;
+    } else {
+      char *new_content = realloc(content, content_len + line_len + 1);
+      if (!new_content) {
+        free(content);
+        fclose(file);
+        sqlite3_result_error(ctx, "Out of memory", -1);
+        return;
+      }
+      content = new_content;
+      strcpy(content + content_len, line);
+      content_len += line_len;
+    }
+  }
+  
+  fclose(file);
+  
+  if (!content) {
+    // Empty file or only front matter
+    sqlite3_result_text(ctx, "", 0, SQLITE_TRANSIENT);
     return;
   }
   
-  // Read file contents
-  size_t bytes_read = fread(contents, 1, file_size, file);
-  fclose(file);
-  
-  contents[bytes_read] = '\0';
-  
   // Convert to HTML
-  char *html = cmark_markdown_to_html(contents, bytes_read, 0);
-  free(contents);
+  char *html = cmark_markdown_to_html(content, content_len, 0);
+  free(content);
   
   if (html) {
     sqlite3_result_text(ctx, html, -1, free);
