@@ -27,12 +27,19 @@ typedef struct {
   char *root_dir;
 } VTab;
 
-typedef struct {
+// A directory entry in our stack for traversal
+typedef struct DirEntry {
   DIR *dir;
-  struct dirent *entry;
-  struct stat stat_buf;
   char *path;
-  bool has_stat;
+  struct DirEntry *next;
+} DirEntry;
+
+typedef struct {
+  DirEntry *dir_stack;      // Stack of directories to process
+  struct dirent *entry;     // Current directory entry
+  struct stat stat_buf;     // Stat buffer for current file
+  char *current_path;       // Current file path
+  bool has_stat;            // Whether stat_buf is valid
 } CursorState;
 
 typedef struct {
@@ -40,6 +47,142 @@ typedef struct {
   sqlite3_int64 row_id;
   CursorState *state;
 } Cursor;
+
+// Add a directory to the traversal stack
+static bool push_dir(CursorState *state, DIR *dir, const char *path) {
+  if (!dir || !path) return false;
+  
+  DirEntry *entry = malloc(sizeof(DirEntry));
+  if (!entry) return false;
+  
+  entry->dir = dir;
+  entry->path = sqlite3_malloc(strlen(path) + 1);
+  if (!entry->path) {
+    free(entry);
+    return false;
+  }
+  strcpy(entry->path, path);
+  
+  // Add to front of stack
+  entry->next = state->dir_stack;
+  state->dir_stack = entry;
+  
+  return true;
+}
+
+// Remove and free the top directory from the stack
+static void pop_dir(CursorState *state) {
+  if (!state || !state->dir_stack) return;
+  
+  DirEntry *entry = state->dir_stack;
+  state->dir_stack = entry->next;
+  
+  if (entry->dir) closedir(entry->dir);
+  sqlite3_free(entry->path);
+  free(entry);
+}
+
+// Clean up all directories in the stack
+static void free_dir_stack(CursorState *state) {
+  if (!state) return;
+  
+  while (state->dir_stack) {
+    pop_dir(state);
+  }
+}
+
+// Path manipulation function
+static char* path_join(const char *dir, const char *file) {
+  size_t dir_len = strlen(dir);
+  size_t file_len = strlen(file);
+  size_t need_slash = (dir_len > 0 && dir[dir_len - 1] != '/') ? 1 : 0;
+  
+  char *result = sqlite3_malloc(dir_len + need_slash + file_len + 1);
+  if (!result) return NULL;
+  
+  strcpy(result, dir);
+  if (need_slash) result[dir_len] = '/';
+  strcpy(result + dir_len + need_slash, file);
+  
+  return result;
+}
+
+// Check if file has a markdown extension (.md or .markdown)
+static bool is_markdown_file(const char *path) {
+  size_t len = strlen(path);
+  return (len > 3 && strcmp(&path[len-3], ".md") == 0) ||
+         (len > 9 && strcmp(&path[len-9], ".markdown") == 0);
+}
+
+// Get the next markdown file to process
+static bool get_next_file(CursorState *state) {
+  if (!state) return false;
+  
+  // Free previous path
+  if (state->current_path) {
+    sqlite3_free(state->current_path);
+    state->current_path = NULL;
+  }
+  
+  // Reset stat flag
+  state->has_stat = false;
+  
+  while (state->dir_stack) {
+    DIR *current_dir = state->dir_stack->dir;
+    const char *current_path = state->dir_stack->path;
+    
+    struct dirent *entry;
+    while ((entry = readdir(current_dir)) != NULL) {
+      const char *name = entry->d_name;
+      
+      // Skip . and ..
+      if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+        continue;
+      
+      // Build full path
+      char *full_path = path_join(current_path, name);
+      if (!full_path) continue;
+      
+      // Get file stat
+      struct stat st;
+      if (stat(full_path, &st) != 0) {
+        sqlite3_free(full_path);
+        continue;
+      }
+      
+      if (S_ISDIR(st.st_mode)) {
+        // It's a directory - add to stack for later traversal
+        DIR *subdir = opendir(full_path);
+        if (subdir) {
+          if (!push_dir(state, subdir, full_path)) {
+            // Failed to add to stack
+            closedir(subdir);
+            sqlite3_free(full_path);
+          }
+        } else {
+          sqlite3_free(full_path);
+        }
+      } else if (S_ISREG(st.st_mode) && is_markdown_file(full_path)) {
+        // Found a markdown file
+        state->current_path = full_path;
+        state->entry = entry; // Just a reference - do not free
+        
+        // Copy stat info
+        memcpy(&state->stat_buf, &st, sizeof(struct stat));
+        state->has_stat = true;
+        return true;
+      } else {
+        // Not a directory or markdown file
+        sqlite3_free(full_path);
+      }
+    }
+    
+    // No more entries in current directory, pop and continue
+    pop_dir(state);
+  }
+  
+  return false; // No more files
+}
 
 static int vtabConnect(sqlite3 *db, void *aux, int argc, const char *const *argv, 
                       sqlite3_vtab **pp_vtab, char **pz_err) {
@@ -142,62 +285,6 @@ static int vtabDisconnect(sqlite3_vtab *p_vtab) {
   return SQLITE_OK;
 }
 
-// Path manipulation function
-
-static char* path_join(const char *dir, const char *file) {
-  size_t dir_len = strlen(dir);
-  size_t file_len = strlen(file);
-  size_t need_slash = (dir_len > 0 && dir[dir_len - 1] != '/') ? 1 : 0;
-  
-  char *result = sqlite3_malloc(dir_len + need_slash + file_len + 1);
-  if (!result) return NULL;
-  
-  strcpy(result, dir);
-  if (need_slash) result[dir_len] = '/';
-  strcpy(result + dir_len + need_slash, file);
-  
-  return result;
-}
-
-static char* get_next_file(CursorState *state) {
-  if (!state->dir) return NULL;
-  
-  struct dirent *entry;
-  
-  while ((entry = readdir(state->dir)) != NULL) {
-    // Skip . and ..
-    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-      continue;
-    
-    // Get the full path
-    char *path = path_join(state->path, entry->d_name);
-    if (!path) return NULL;
-    
-    // Check if it's a regular file (not directory)
-    struct stat stat_buf;
-    if (stat(path, &stat_buf) == 0 && S_ISREG(stat_buf.st_mode)) {
-      // Found a regular file
-      free(state->entry);
-      
-      state->entry = malloc(sizeof(struct dirent));
-      if (!state->entry) {
-        sqlite3_free(path);
-        return NULL;
-      }
-      
-      memcpy(state->entry, entry, sizeof(struct dirent));
-      state->has_stat = false;
-      return path;
-    }
-    
-    // Not a regular file, skip it
-    sqlite3_free(path);
-  }
-  
-  // No more files
-  return NULL;
-}
-
 static int vtabOpen(sqlite3_vtab *p_vtab, sqlite3_vtab_cursor **pp_cursor) {
   VTab *vtab = (VTab*)p_vtab;
   
@@ -207,38 +294,40 @@ static int vtabOpen(sqlite3_vtab *p_vtab, sqlite3_vtab_cursor **pp_cursor) {
   memset(new_cursor, 0, sizeof(Cursor));
   
   // Create cursor state
-  CursorState *p_state = sqlite3_malloc(sizeof(CursorState));
-  if (!p_state) {
+  CursorState *state = sqlite3_malloc(sizeof(CursorState));
+  if (!state) {
     sqlite3_free(new_cursor);
     return SQLITE_NOMEM;
   }
-  memset(p_state, 0, sizeof(CursorState));
+  memset(state, 0, sizeof(CursorState));
   
-  // Open directory
-  p_state->dir = opendir(vtab->root_dir);
-  if (!p_state->dir) {
-    sqlite3_free(p_state);
+  // Open root directory
+  DIR *root_dir = opendir(vtab->root_dir);
+  if (!root_dir) {
+    sqlite3_free(state);
     sqlite3_free(new_cursor);
     return SQLITE_ERROR;
   }
   
-  p_state->path = sqlite3_malloc(strlen(vtab->root_dir) + 1);
-  if (!p_state->path) {
-    closedir(p_state->dir);
-    sqlite3_free(p_state);
+  // Initialize the directory stack with root directory
+  if (!push_dir(state, root_dir, vtab->root_dir)) {
+    closedir(root_dir);
+    sqlite3_free(state);
     sqlite3_free(new_cursor);
     return SQLITE_NOMEM;
   }
-  strcpy(p_state->path, vtab->root_dir);
   
   // Get first file
-  char *file_path = get_next_file(p_state);
-  if (file_path) {
-    sqlite3_free(p_state->path);
-    p_state->path = file_path;
+  if (!get_next_file(state)) {
+    // No files found
+    free_dir_stack(state);
+    sqlite3_free(state);
+    sqlite3_free(new_cursor);
+    return SQLITE_EMPTY;
   }
   
-  new_cursor->state = p_state;
+  new_cursor->state = state;
+  new_cursor->row_id = 1;
   *pp_cursor = &new_cursor->base;
   
   return SQLITE_OK;
@@ -249,11 +338,15 @@ static int vtabClose(sqlite3_vtab_cursor *p_base) {
   CursorState *state = cur->state;
   
   if (state) {
-    if (state->dir) {
-      closedir(state->dir);
+    // Free directory stack
+    free_dir_stack(state);
+    
+    // Free current path
+    if (state->current_path) {
+      sqlite3_free(state->current_path);
     }
-    sqlite3_free(state->path);
-    free(state->entry);
+    
+    // Free state
     sqlite3_free(state);
   }
   
@@ -264,58 +357,11 @@ static int vtabClose(sqlite3_vtab_cursor *p_base) {
 static int vtabNext(sqlite3_vtab_cursor *p_cur_base) {
   Cursor *cursor = (Cursor*)p_cur_base;
   cursor->row_id += 1;
-  CursorState *state = cursor->state;
   
-  state->has_stat = false;
-  
-  // Get the next file from the current directory
-  if (state->dir != NULL) {
-    struct dirent *entry;
-    bool found_file = false;
-    
-    while ((entry = readdir(state->dir)) != NULL) {
-      // Skip . and ..
-      if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-        continue;
-        
-      // Get the full path
-      char *path = path_join(state->path, entry->d_name);
-      if (!path) continue;
-      
-      // Keep only regular files (not directories)
-      struct stat stat_buf;
-      if (stat(path, &stat_buf) == 0 && S_ISREG(stat_buf.st_mode)) {
-        // Save entry and path
-        if (state->entry) free(state->entry);
-        
-        state->entry = malloc(sizeof(struct dirent));
-        if (!state->entry) {
-          sqlite3_free(path);
-          continue;
-        }
-        
-        memcpy(state->entry, entry, sizeof(struct dirent));
-        
-        if (state->path) sqlite3_free(state->path);
-        state->path = path;
-        state->has_stat = false;
-        found_file = true;
-        break;
-      }
-      
-      sqlite3_free(path);
-    }
-    
-    if (!found_file) {
-      // No more files in this directory
-      if (state->path) {
-        sqlite3_free(state->path);
-        state->path = NULL;
-      }
-      
-      closedir(state->dir);
-      state->dir = NULL;
-    }
+  // Get the next file
+  if (!get_next_file(cursor->state)) {
+    // No more files, set EOF
+    cursor->state->current_path = NULL;
   }
   
   return SQLITE_OK;
@@ -325,36 +371,19 @@ static int vtabColumn(sqlite3_vtab_cursor *p_cur, sqlite3_context *ctx, int i) {
   Cursor *cur = (Cursor*)p_cur;
   CursorState *state = cur->state;
   
-  if (!state->path) {
+  if (!state->current_path) {
     sqlite3_result_null(ctx);
     return SQLITE_OK;
   }
   
-  // Removed unused tab variable
-  const char *basename_str = state->entry ? state->entry->d_name : NULL;
-  
-  // Get file stat if needed
-  if (i >= 2 && !state->has_stat) {
-    if (stat(state->path, &state->stat_buf) != 0) {
-      char *error_msg = sqlite3_mprintf("Could not stat %s: %s", 
-                                      state->path, strerror(errno));
-      sqlite3_result_error(ctx, error_msg, -1);
-      sqlite3_free(error_msg);
-      return SQLITE_ERROR;
-    }
-    state->has_stat = true;
-  }
-  
   switch(i) {
     case 0: // path
-      sqlite3_result_text(ctx, state->path, -1, SQLITE_TRANSIENT);
+      sqlite3_result_text(ctx, state->current_path, -1, SQLITE_TRANSIENT);
       break;
     case 1: // basename
-      if (basename_str) {
-        sqlite3_result_text(ctx, basename_str, -1, SQLITE_TRANSIENT);
-      } else {
+      {
         // Get the basename from the path
-        char *path_copy = strdup(state->path);
+        char *path_copy = strdup(state->current_path);
         if (!path_copy) {
           sqlite3_result_error(ctx, "Out of memory", -1);
           return SQLITE_NOMEM;
@@ -394,7 +423,7 @@ static int vtabRowid(sqlite3_vtab_cursor *cur, sqlite_int64 *pRowid) {
 static int vtabEof(sqlite3_vtab_cursor *p_base) {
   Cursor *cur = (Cursor*)p_base;
   CursorState *state = cur->state;
-  return state->path == NULL;
+  return state->current_path == NULL;
 }
 
 static int vtabFilter(sqlite3_vtab_cursor *p_vtab_cursor, int idxNum, const char *idxStr,
