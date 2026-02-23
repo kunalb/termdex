@@ -6,7 +6,7 @@ if [[ -n "${TDX_DEBUG:-}" ]]; then
     set -x
 fi
 
-cd "${TDX_HOME_DIR:-~/dex}"
+cd "${TDX_HOME_DIR:-"$HOME/dex"}"
 
 ########################################################################
 # Constants
@@ -52,7 +52,7 @@ function check_lib {
 
 function print_usage {
     echo "$(basename "${BASH_SOURCE[0]}") usage:"
-    echo "  n, new [template=note,task,bookmark,reminder,pomodoro,*]"
+    echo "  n, new [template=note,meeting,pomodoro,*]"
     echo "  e, edit <path>"
     echo "  j, journal"
     echo "  p, pomodoro"
