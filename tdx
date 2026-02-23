@@ -1,0 +1,289 @@
+#!/bin/bash -eu
+#
+# Minimal version to quickly capture markdown notes.
+
+if [[ -n "${TDX_DEBUG:-}" ]]; then
+    set -x
+fi
+
+cd "${TDX_HOME_DIR:-~/dex}"
+
+########################################################################
+# Constants
+########################################################################
+CUR_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+readonly CUR_DIR
+export BAT_THEME="${BAT_THEME:-base16}"
+readonly BAT_THEME
+export SELF="$0"
+
+export FZF_DEFAULT_OPTS="--preview 'file={1}; [[ -f \"\$file\" ]] && bat --color=always --style=plain \"\$file\"' --preview-window 'bottom:border-sharp:wrap'"
+FZF_DEFAULT_OPTS="--header \"TERMinal inDEX | $(pwd) \$ tdx ${*}\" ${FZF_DEFAULT_OPTS:-}"
+FZF_DEFAULT_OPTS="--color header:red ${FZF_DEFAULT_OPTS:-}"
+FZF_DEFAULT_OPTS="--header-first ${FZF_DEFAULT_OPTS:-}"
+FZF_DEFAULT_OPTS="--layout reverse ${FZF_DEFAULT_OPTS:-}"
+
+
+########################################################################
+# Utilities
+########################################################################
+function err {
+    echo -e "\033[91m $* \033[0m" >&2
+}
+
+function check_dep {
+    if ! command -v "$1" &> /dev/null; then
+        err "Couldn't find $1 in \$PATH: please make sure it's installed!"
+        exit 1
+    fi
+}
+
+function check_lib {
+    if [[ ! -f "$1" ]]; then
+        err "Couldn't find $1: please make sure it's available!"
+        exit 1
+    fi
+}
+
+
+########################################################################
+# Implementation
+########################################################################
+
+function print_usage {
+    echo "$(basename "${BASH_SOURCE[0]}") usage:"
+    echo "  n, new [template=note,task,bookmark,reminder,pomodoro,*]"
+    echo "  e, edit <path>"
+    echo "  j, journal"
+    echo "  p, pomodoro"
+    echo "  r, ripgrep"
+    exit 1
+}
+
+function new {
+    local template="${1:-}"
+    if [[ -n "$template" ]]; then
+        shift
+    fi
+
+    local path
+    path="$(date +%Y/%m/%d)"
+
+    local filename
+    filename="$(date +%s).md"
+
+    mkdir -p "$path"
+    local full_path="$path/$filename"
+
+    case "$template" in
+        n|note)
+            cat <<EOF >"$full_path"
+---
+title: ${1:-}
+collection: ${2:-}
+tags:
+what: note
+---
+
+EOF
+            ;;
+        p|pomo|pomodoro)
+            cat <<EOF >"$full_path"
+---
+title: ${1:-}
+collection: ${2:-}
+what: pomodoro
+---
+
+EOF
+            ;;
+        m|meeting)
+            cat <<EOF >"$full_path"
+---
+title: ${1:-}
+collection: ${2:-}
+what: meeting
+---
+
+EOF
+            ;;
+        *)
+            cat <<EOF >"$full_path"
+---
+title: ${1:-}
+collection: ${2:-}
+tags:
+what: $template
+---
+
+EOF
+    esac
+    "$EDITOR" "$full_path"
+
+    if  [[ ! -s "$full_path" ]]; then
+        rm "$full_path"
+    fi
+}
+
+function journal {
+    local path
+    local date_cmd
+    local date_format
+
+
+    case "${1:-}" in
+        y)
+            date_format="%Y"
+            shift
+            ;;
+        m)
+            date_format="%Y/%m"
+            shift
+            ;;
+        w)
+            date_format="%Y/w/%U"
+            shift
+            ;;
+        *)
+            date_format="%Y/%m/%d"
+            ;;
+    esac
+
+    case "${1:-}" in
+        "")
+            title=$(date +"$date_format")
+            ;;
+        *)
+            title="$(date -d "$1" +"$date_format")"
+            ;;
+    esac
+    path="$title.md"
+
+    local parent_dir
+    parent_dir="$(dirname "$path")"
+    mkdir -p "$parent_dir"
+
+    if [[ ! -f "$path" ]]; then
+        cat <<EOF >"$path"
+---
+title: $title
+---
+EOF
+    fi
+
+    "$EDITOR" "$path"
+
+    if [[ ! -s "$path" ]]; then
+        rm "$path"
+    fi
+}
+
+function notify {
+    local title="$1"
+    local summary="$2"
+
+    if ! command -v notify-send &> /dev/null; then
+        return
+    fi
+
+    notify-send --app-name "tdx" \
+          -u "normal" \
+          --action="action1=Focus Window" \
+          "$title" \
+          "$summary"
+}
+
+function pomodoro {
+    while true; do
+        clear
+
+        echo
+        echo -e "  \033[32m.v,\033[0m"
+        echo -e " \033[31m(\033[0m' \033[31m,)\033[0m"
+        echo
+
+        local location
+        location=$(pwd)
+
+        echo -ne "\033[4mPomodoro goal?\033[0m\n"
+        local purpose
+        read -e -r purpose
+
+        local collection
+        echo -ne "\033[4mAdd to collection?\033[0m\n"
+        read -e -r collection
+
+        local end_time
+        end_time="$(date -d "+25 minutes")"
+
+        local end_timestamp
+        end_timestamp="$(date -d "$end_time" +%s)"
+
+        echo -e "\n> Pomodoro will end at ${end_time}"
+        echo -n "> "
+        while (( $(date +%s) < end_timestamp )); do
+            sleep 60
+            echo -n "."
+        done
+        echo -e '\a'
+        notify "Pomodoro finished!" "${collection+$collection\n}$purpose"
+
+        $SELF new pomodoro "$purpose" "$collection"
+        echo -e "> Recorded.\n"
+
+        end_time="$(date -d "+5 minutes")"
+        end_timestamp="$(date -d "$end_time" +%s)"
+        echo "> Break will end at ${end_time}"
+        echo -n "> "
+        while (( $(date +%s) < end_timestamp )); do
+            sleep 60
+            echo -n "."
+        done
+        echo -e "\a\n\n"
+        notify "Break finished!" "$(date)"
+    done
+}
+
+function ripgrep {
+  RG_PREFIX="rg --column --line-number --no-heading --color=always --smart-case --sort path"
+  INITIAL_QUERY="${*:-}"
+  # shellcheck disable=SC2016
+  fzf --ansi --disabled --query "$INITIAL_QUERY" \
+      --bind "start:reload:$RG_PREFIX {q}" \
+      --bind "change:reload:sleep 0.05; $RG_PREFIX {q} || true" \
+      --delimiter : \
+      --preview 'bat --style=plain {1} --highlight-line {2}' \
+      --bind 'enter:become($EDITOR {1} +{2})'
+}
+
+function main {
+    check_dep fzf
+    check_dep rg
+
+    if (( $# < 1 )); then
+        print_usage
+    fi
+
+    local basecmd="${1:-}"
+    shift
+
+    case "$basecmd" in
+        n|new)
+            new "$@"
+            ;;
+        j|journal)
+            journal "$@"
+            ;;
+        p|pomo|pomodoro)
+            pomodoro "$@"
+            ;;
+        r|ripgrep)
+            ripgrep "$@"
+            ;;
+        *)
+            print_usage
+    esac
+}
+
+
+main "$@"
